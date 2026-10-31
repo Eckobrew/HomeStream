@@ -68,6 +68,8 @@ export function registerDevice(
   for (const dev of Object.values(devices)) {
     if (dev.deviceId === cleanId && cleanId.length > 0) {
       dev.deviceName = deviceName || dev.deviceName;
+      dev.client = client;
+      dev.pairedLocally = pairedLocally;
       dev.lastSeen = new Date().toISOString();
       saveDevices(devices);
       return dev;

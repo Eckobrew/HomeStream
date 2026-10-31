@@ -234,3 +234,18 @@ are required to run this server.
 See [audit fixes and migration notes](docs/audit-fixes.md) before deploying the
 Android 1.1.0 integration and updated authentication. This includes signed
 sessions, explicit proxy trust, episode queues and watched-state APIs.
+
+### Android connection setup
+
+The app offers local discovery/automatic household pairing, or external Jellyfin
+sign-in. Set `HOMESTREAM_EXTERNAL_URL` to the externally reachable HomeStream URL
+in `.env` before pairing; the phone saves that address alongside its LAN address.
+The registered device credential works on both addresses and survives restarts.
+
+Automatic pairing is permitted only over a direct private-network TCP connection.
+The container's socket identity preload overwrites incoming identity headers and
+signs the actual peer address. Forwarded/proxied requests cannot auto-pair and
+must use Jellyfin sign-in. Keep port 3000 accessible from the home LAN; discovery
+probes that port on the phone's local IPv4 subnet. Wi-Fi client isolation, a VPN,
+or separate VLANs can prevent discovery. Never expose automatic pairing through
+a TCP proxy that conceals public clients as direct LAN peers.
