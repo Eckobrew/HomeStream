@@ -3,12 +3,13 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: homeflix:latest
+    image: ${HOMESTREAM_IMAGE:-ghcr.io/eckobrew/homestream:latest}
     container_name: homeflix
     restart: unless-stopped
     ports:
       - "3000:3000"
     environment:
+      - HOMESTREAM_EXTERNAL_URL=${HOMESTREAM_EXTERNAL_URL:-}
       - NODE_ENV=production
       - PORT=3000
       # Optional native Android / Android TV API (disabled when empty)

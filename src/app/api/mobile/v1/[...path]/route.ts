@@ -1,5 +1,5 @@
 import { withJellyfinSession } from '@/lib/jellyfin-session';
-import { timingSafeEqual } from 'crypto';
+import { createHmac, timingSafeEqual } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { GET as home } from '@/app/api/home/route';
 import { GET as library } from '@/app/api/library/[type]/route';
@@ -21,6 +21,7 @@ import { createSession, readSession } from '@/lib/session';
 import { allowLogin } from '@/lib/login-limit';
 import { isValidDeviceToken, registerDevice } from '@/lib/devices';
 import { handleImage } from '@/lib/image-proxy';
+import { isLocalOrTailscaleIp } from '@/lib/network';
 import { SeerrClient } from '@/lib/seerr';
 import { GET as trailer } from '@/app/api/trailer/route';
 
@@ -46,12 +47,22 @@ async function authorize(request: NextRequest): Promise<NextResponse | undefined
   }
 }
 
+function directLocal(request: NextRequest): boolean {
+  const value = request.headers.get('x-homestream-socket') || '';
+  const proof = request.headers.get('x-homestream-proof') || '';
+  const secret = process.env.HOMESTREAM_SESSION_SECRET || '';
+  const [ip, timestamp] = value.split('|');
+  if (secret.length < 32 || !ip || !isLocalOrTailscaleIp(ip) || !timestamp || Math.abs(Date.now() - Number(timestamp)) > 30000 || !/^\d+$/.test(timestamp)) return false;
+  const expected = createHmac('sha256', secret).update(value).digest('hex');
+  return proof.length === expected.length && timingSafeEqual(Buffer.from(proof), Buffer.from(expected));
+}
+
 async function dispatch(request: NextRequest, context: Context) {
   const params = await context.params;
   const route = params.path.join('/');
   const get = request.method === 'GET';
   if (get && route === 'discovery') {
-    return NextResponse.json({ apiVersion: 1, appName: 'HomeStream', cast: true, pairing: 'token', jellyfinLogin: true });
+    return NextResponse.json({ apiVersion: 1, appName: 'HomeStream', cast: true, pairing: 'local', localPairing: directLocal(request), jellyfinLogin: true });
   }
   if (get && route === 'image') return handleImage(request);
   if (get && route === 'auth/users') return NextResponse.json({ users: [] });
@@ -74,6 +85,17 @@ async function dispatch(request: NextRequest, context: Context) {
     const user = { id: auth.User.Id, name: auth.User.Name };
     return NextResponse.json({ user, token: await createSession({ ...user, accessToken: auth.AccessToken }, 'mobile') });
   }
+  if (!get && route === 'auth/pair') {
+    if (!directLocal(request)) return NextResponse.json({ error: 'Automatic pairing requires a direct connection on your home network. Use Jellyfin sign-in remotely.' }, { status: 403 });
+    if (!allowLogin(request)) return NextResponse.json({ error: 'Too many pairing attempts. Try again shortly.' }, { status: 429 });
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body.deviceId !== 'string' || !body.deviceId || body.deviceId.length > 200) return NextResponse.json({ error: 'Device identity required' }, { status: 400 });
+    const externalUrl = process.env.HOMESTREAM_EXTERNAL_URL || '';
+    if (!externalUrl) return NextResponse.json({ error: 'Set HOMESTREAM_EXTERNAL_URL on the server so local pairing also works away from home.' }, { status: 503 });
+    const device = registerDevice(body.deviceId, typeof body.deviceName === 'string' ? body.deviceName.slice(0, 200) : 'Android', 'android', true);
+    console.info('[mobile] Local device paired');
+    return NextResponse.json({ token: device.token, externalUrl, serverName: 'HomeStream' });
+  }
   const denied = await authorize(request);
   if (denied) return denied;
   // A Jellyfin login is bound to that user's history; a household pairing token
@@ -91,12 +113,6 @@ async function dispatch(request: NextRequest, context: Context) {
       body = JSON.stringify({ ...payload, userId: session.id });
     }
     request = new NextRequest(url, { method: request.method, headers, body, signal: request.signal });
-  }
-  if (!get && route === 'auth/pair') {
-    if (session) return NextResponse.json({ error: 'Household pairing credentials required' }, { status: 403 });
-    const body = await request.json().catch(() => ({}));
-    const device = registerDevice(typeof body.deviceId === 'string' ? body.deviceId : '', typeof body.deviceName === 'string' ? body.deviceName : 'Android', 'android', false);
-    return NextResponse.json({ success: true, token: device.token, deviceId: device.deviceId, deviceName: device.deviceName });
   }
   if (get && route === 'trailer') return trailer(request);
   if (get && route === 'capabilities') return NextResponse.json({ apiVersion: 1, appName: 'HomeStream', cast: true, jellyfinLogin: true });

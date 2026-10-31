@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - codex/audit-playback
     tags:
       - 'v*'
   workflow_dispatch:
@@ -46,6 +47,8 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=audit-playback,enable=${{ github.ref == 'refs/heads/codex/audit-playback' }}
+            type=sha,format=long
             type=semver,pattern={{version}}
 
       - name: Build and push Docker image
