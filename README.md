@@ -249,3 +249,19 @@ must use Jellyfin sign-in. Keep port 3000 accessible from the home LAN; discover
 probes that port on the phone's local IPv4 subnet. Wi-Fi client isolation, a VPN,
 or separate VLANs can prevent discovery. Never expose automatic pairing through
 a TCP proxy that conceals public clients as direct LAN peers.
+
+### Streaming a downloading torrent
+
+HomeStream checks qBittorrent's verified piece states before serving incomplete
+file bytes. Android requests the original container for native playback, with a
+compatibility conversion fallback. Browser conversion reads through the same
+piece-checked HTTP range source. Buffering waits for missing pieces rather than
+reading preallocated zeroes. Seeking into an undownloaded region can buffer until
+those pieces arrive; this does not provide per-piece seek prioritization.
+
+The torrent must be visible to qBittorrent's Web API, and HomeStream must mount
+the same download files. If the two containers use different root paths, set
+`QBITTORRENT_DOWNLOADS_PATH` to qBittorrent's download root and `DOWNLOADS_PATH`
+to HomeStream's corresponding mount. Incomplete `.!qB` filenames are supported.
+Multi-file incomplete streams require file piece ranges from qBittorrent.
+Live-download Cast playback is currently unsupported; cast after Jellyfin import.

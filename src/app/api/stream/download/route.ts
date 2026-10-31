@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
 import { spawn } from 'child_process';
-import { Readable } from 'stream';
+import { torrentResponse, PieceSource } from '@/lib/torrent-reader';
 import { QBittorrentClient, isVideoFile } from '@/lib/qbittorrent';
 import { getServerConfig } from '@/lib/config';
 
@@ -25,47 +25,34 @@ function findTorrentFilePath(
   fileName: string
 ): string | null {
   const candidates: string[] = [];
-
+  // Translate qBittorrent's mount into our shared downloads mount, preserving
+  // the selected file's relative path inside multi-file/season torrents.
+  const normalized = fileName.replace(/\\/g, '/');
+  const relativeInsideRoot = normalized.startsWith(`${torrentName}/`) ? normalized.slice(torrentName.length + 1) : normalized;
   if (contentPath) {
-    candidates.push(contentPath);
-    // If contentPath was relative or inside another container mount
-    const baseContentName = path.basename(contentPath);
-    candidates.push(path.join(downloadsPath, baseContentName));
+    if (path.basename(contentPath) === path.basename(normalized)) candidates.push(contentPath);
+    candidates.push(path.join(contentPath, relativeInsideRoot));
+    const remoteRoot = process.env.QBITTORRENT_DOWNLOADS_PATH;
+    const marker = `/${path.basename(downloadsPath)}/`;
+    const markerIndex = contentPath.indexOf(marker);
+    const translated = remoteRoot && (contentPath === remoteRoot || contentPath.startsWith(`${remoteRoot}/`))
+      ? path.join(downloadsPath, path.relative(remoteRoot, contentPath))
+      : markerIndex >= 0 ? path.join(downloadsPath, contentPath.slice(markerIndex + marker.length)) : null;
+    if (translated) {
+      if (path.basename(contentPath) === path.basename(normalized)) candidates.push(translated);
+      candidates.push(path.join(translated, relativeInsideRoot));
+    }
+    const mappedRoot = path.join(downloadsPath, path.basename(contentPath));
+    candidates.push(path.join(mappedRoot, relativeInsideRoot));
+    if (path.basename(contentPath) === path.basename(normalized)) candidates.push(mappedRoot);
   }
-
-  if (fileName) {
-    candidates.push(path.join(downloadsPath, fileName));
-    candidates.push(path.join(downloadsPath, torrentName, fileName));
-    candidates.push(path.join(downloadsPath, path.basename(fileName)));
-  }
-
-  if (torrentName) {
-    candidates.push(path.join(downloadsPath, torrentName));
-  }
-
-  for (const p of candidates) {
-    try {
-      const file = confinedFile(downloadsPath, p);
+  candidates.push(path.join(downloadsPath, normalized));
+  candidates.push(path.join(downloadsPath, torrentName, relativeInsideRoot));
+  for (const candidate of candidates) {
+    for (const name of [candidate, `${candidate}.!qB`]) {
+      const file = confinedFile(downloadsPath, name);
       if (file) return file;
-    } catch {
-      // Ignore permission or traversal errors during candidate check
     }
-  }
-
-  // Recursive search 1 level down in downloadsPath
-  try {
-    if (fs.existsSync(downloadsPath)) {
-      const topDirs = fs.readdirSync(downloadsPath, { withFileTypes: true });
-      for (const ent of topDirs) {
-        if (ent.isDirectory()) {
-          const directCheck = path.join(downloadsPath, ent.name, path.basename(fileName));
-          const file = confinedFile(downloadsPath, directCheck);
-          if (file) return file;
-        }
-      }
-    }
-  } catch {
-    // Ignore read errors
   }
 
   return null;
@@ -94,14 +81,18 @@ export async function GET(request: NextRequest) {
   let isActivelyDownloading = false;
   let targetFileSize = 0;
   let targetFileProgress = 1.0;
+  let pieceSource: PieceSource | undefined;
+  let selectedFileIndex: number | undefined;
+  let torrentHash: string | undefined;
 
-  // 1. Synthetic testing or direct path streaming
+  // Direct-path access is for complete files only; growing torrents need a hash
+  // so piece availability can be checked.
   if (rawPath) {
+    if (searchParams.get('growing') === '1') return NextResponse.json({ error: 'Use the torrent hash to stream an incomplete file safely' }, { status: 400 });
     const candidate = path.resolve(downloadsPath, rawPath);
     const safePath = confinedFile(downloadsPath, candidate);
     if (!safePath) return NextResponse.json({ error: 'Invalid or unavailable file path' }, { status: 403 });
     resolvedPath = safePath;
-    isActivelyDownloading = searchParams.get('growing') === '1';
     targetFileSize = fs.statSync(safePath).size;
     targetFileProgress = isActivelyDownloading ? 0.5 : 1.0;
   } else {
@@ -130,7 +121,7 @@ export async function GET(request: NextRequest) {
 
     // Get file list (handling season packs and multi-file torrents)
     const files = await client.getTorrentFiles(torrent.hash);
-    let targetFile = fileIndex !== undefined && files[fileIndex] ? files[fileIndex] : undefined;
+    let targetFile = fileIndex !== undefined ? files.find(file => file.index === fileIndex) : undefined;
 
     // If season and episode are specified, find matching episode file in season pack
     if (!targetFile && (seasonParam || episodeParam)) {
@@ -139,8 +130,10 @@ export async function GET(request: NextRequest) {
       const patterns = [
         new RegExp(`s0*${sNum}[._ -]*e0*${epNum}\\b`, 'i'),
         new RegExp(`\\b${sNum}x0*${epNum}\\b`, 'i'),
-        new RegExp(`\\be0*${epNum}\\b`, 'i'),
-        new RegExp(`[._ -]0*${epNum}[._ -]`, 'i'),
+        ...(files.some(file => /s\d+[._ -]*e\d+|\d+x\d+/i.test(file.name)) ? [] : [
+          new RegExp(`\\be0*${epNum}\\b`, 'i'),
+          new RegExp(`[._ -]0*${epNum}[._ -]`, 'i'),
+        ]),
       ];
       for (const pattern of patterns) {
         const found = files.find((f) => isVideoFile(f.name) && pattern.test(f.name));
@@ -170,16 +163,14 @@ export async function GET(request: NextRequest) {
       })[0];
     }
 
-    if (!targetFile && files.length > 0) {
-      targetFile = files[0];
-    }
-
-    if (!targetFile) {
+    if (!targetFile || !isVideoFile(targetFile.name)) {
       return NextResponse.json({ error: 'No video files found in torrent' }, { status: 404 });
     }
 
     // Prioritize downloading this specific file (season pack optimization!)
-    client.prioritizeFile(torrent.hash, targetFile.index).catch(() => {});
+    if (!await client.prioritizeFile(torrent.hash, targetFile.index)) console.warn('[torrent] Could not prioritize selected file');
+    selectedFileIndex = targetFile.index;
+    torrentHash = torrent.hash;
 
     resolvedPath = findTorrentFilePath(
       downloadsPath,
@@ -201,12 +192,18 @@ export async function GET(request: NextRequest) {
 
     targetFileSize = targetFile.size;
     targetFileProgress = targetFile.progress;
-    isActivelyDownloading =
-      targetFile.progress < 0.999 &&
-      (torrent.state.toLowerCase().includes('dl') ||
-        torrent.state.toLowerCase().includes('download') ||
-        torrent.dlspeed > 0 ||
-        torrent.progress < 1.0);
+    isActivelyDownloading = targetFile.progress < 1;
+    if (isActivelyDownloading) {
+      const pieceSize = await client.getPieceSize(torrent.hash);
+      const range = targetFile.piece_range;
+      const precedingSize = files.filter(file => file.index < targetFile!.index).reduce((total, file) => total + file.size, 0);
+      const offset = range ? Math.max(precedingSize, range[0] * pieceSize) : precedingSize;
+      if ((!range && files.length > 1) || !Number.isSafeInteger(pieceSize) || pieceSize <= 0 || !Number.isSafeInteger(offset) || offset < 0 ||
+          (range && (Math.floor(offset / pieceSize) !== range[0] || Math.floor((offset + targetFile.size - 1) / pieceSize) !== range[1]))) {
+        return NextResponse.json({ error: 'Cannot determine verified torrent pieces. Wait for the download to complete.' }, { status: 503 });
+      }
+      pieceSource = { client, hash: torrent.hash, size: pieceSize, offset };
+    }
   }
 
   let stat: fs.Stats;
@@ -218,6 +215,7 @@ export async function GET(request: NextRequest) {
 
   // Quick probe support: return durationSeconds measured directly by ffprobe
   if (searchParams.get('probe') === '1') {
+    if (pieceSource) return NextResponse.json({ durationSeconds: 0 });
     try {
       const probeProc = spawn('ffprobe', [
         '-v', 'error',
@@ -252,7 +250,7 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const ext = path.extname(resolvedPath).toLowerCase();
+  const ext = path.extname(resolvedPath.replace(/\.!qB$/i, '')).toLowerCase();
 
   // If download is already 100% complete and directly playable (e.g. MP4/AAC)
   const isDirectWebPlayable =
@@ -260,49 +258,31 @@ export async function GET(request: NextRequest) {
     !forceTranscode &&
     (ext === '.mp4' || ext === '.m4v' || ext === '.webm');
 
-  if (isDirectWebPlayable) {
-    const range = request.headers.get('range');
-    const fileSize = stat.size;
-
-    let start = 0;
-    let end = fileSize - 1;
-    if (range) {
-      const match = /^bytes=(\d*)-(\d*)$/.exec(range);
-      if (!match || (!match[1] && !match[2])) return new NextResponse(null, { status: 416, headers: { 'Content-Range': `bytes */${fileSize}` } });
-      if (!match[1]) start = Math.max(0, fileSize - Number(match[2]));
-      else {
-        start = Number(match[1]);
-        if (match[2]) end = Math.min(Number(match[2]), fileSize - 1);
-      }
-      if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || start > end || start >= fileSize) {
-        return new NextResponse(null, { status: 416, headers: { 'Content-Range': `bytes */${fileSize}` } });
-      }
-    }
-    const fileStream = fs.createReadStream(resolvedPath, fileSize ? { start, end } : {});
-    const abort = () => { fileStream.destroy(); };
-    request.signal.addEventListener('abort', abort, { once: true });
-    fileStream.once('close', () => request.signal.removeEventListener('abort', abort));
-    return new NextResponse(Readable.toWeb(fileStream) as ReadableStream, {
-      status: range ? 206 : 200,
-      headers: {
-        ...(range ? { 'Content-Range': `bytes ${start}-${end}/${fileSize}` } : {}),
-        'Accept-Ranges': 'bytes',
-        'Content-Length': String(fileSize ? end - start + 1 : 0),
-        'Content-Type': ext === '.webm' ? 'video/webm' : 'video/mp4',
-        'Cache-Control': 'no-store',
-      },
-    });
+  const sourceRequest = searchParams.get('source') === '1';
+  const nativeRequest = searchParams.get('native') === '1' && !forceTranscode;
+  if (isDirectWebPlayable || sourceRequest || nativeRequest) {
+    const types: Record<string, string> = { '.mkv': 'video/x-matroska', '.webm': 'video/webm', '.ts': 'video/mp2t', '.avi': 'video/x-msvideo', '.mov': 'video/quicktime' };
+    return torrentResponse(request, resolvedPath, targetFileSize || stat.size, types[ext] || 'video/mp4', pieceSource);
   }
 
   // Transcoding / remuxing pipeline using FFmpeg
-  // Read directly from file on disk so FFmpeg can parse container clusters & seek reliably without pipe EPIPE crashes
+  // Complete files can be read directly; incomplete sources use verified ranges.
   const ffmpegArgs: string[] = ['-hide_banner', '-loglevel', 'error'];
 
   if (startSec > 0) {
     ffmpegArgs.push('-ss', startSec.toString());
   }
 
-  ffmpegArgs.push('-i', resolvedPath);
+  if (pieceSource && torrentHash && selectedFileIndex !== undefined) {
+    // HTTP byte ranges let FFmpeg seek to MP4 headers while the source endpoint
+    // waits for verified pieces. Reading the sparse file directly is unsafe.
+    const token = process.env.HOMESTREAM_MOBILE_TOKEN || '';
+    if (token.length < 32) return NextResponse.json({ error: 'Configure mobile streaming credentials before streaming incomplete downloads' }, { status: 503 });
+    const sourceUrl = `http://127.0.0.1:${process.env.PORT || '3000'}/api/mobile/v1/stream/download?hash=${encodeURIComponent(torrentHash)}&fileIndex=${selectedFileIndex}&source=1`;
+    ffmpegArgs.push('-headers', `Authorization: Bearer ${token}\r\n`, '-rw_timeout', '120000000', '-i', sourceUrl);
+  } else ffmpegArgs.push('-i', resolvedPath);
+
+  ffmpegArgs.push('-map', '0:v:0', '-map', '0:a:0?', '-sn', '-dn');
 
   // Video strategy: copy video stream directly (fastest, lossless, zero CPU)
   if (forceTranscode) ffmpegArgs.push('-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p');
@@ -336,9 +316,10 @@ export async function GET(request: NextRequest) {
         }
       });
 
-      ffmpegProc.stdout.on('end', () => {
+      ffmpegProc.once('close', (code) => {
         try {
-          controller.close();
+          if (code === 0) controller.close();
+          else { console.warn('[torrent] FFmpeg exited:', code); controller.error(new Error('Download stream conversion interrupted')); }
         } catch {}
       });
 

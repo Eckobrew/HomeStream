@@ -24,6 +24,7 @@ export interface QBittorrentRawFile {
   progress: number;
   priority: number;
   is_seed?: boolean;
+  piece_range?: [number, number];
 }
 
 const VIDEO_EXTENSIONS = new Set([
@@ -85,6 +86,7 @@ export class QBittorrentClient {
           Origin: this.baseUrl,
         },
         body: params.toString(),
+        signal: AbortSignal.timeout(10000),
       });
 
       if (!res.ok) {
@@ -136,6 +138,7 @@ export class QBittorrentClient {
     const response = await fetch(url, {
       ...options,
       headers,
+      signal: options.signal || AbortSignal.timeout(10000),
     });
 
     if (response.status === 403 || response.status === 401) {
@@ -144,7 +147,7 @@ export class QBittorrentClient {
       const newSid = await this.getAuthCookie();
       if (newSid) {
         headers['Cookie'] = newSid.includes('=') ? newSid : `SID=${newSid}`;
-        const retryRes = await fetch(url, { ...options, headers });
+        const retryRes = await fetch(url, { ...options, headers, signal: options.signal || AbortSignal.timeout(10000) });
         if (!retryRes.ok) return null;
         const text = await retryRes.text();
         try {
@@ -221,6 +224,16 @@ export class QBittorrentClient {
     return Array.isArray(files) ? files : [];
   }
 
+  async getPieceSize(hash: string): Promise<number> {
+    const properties = await this.request<{ piece_size: number }>(`/api/v2/torrents/properties?hash=${encodeURIComponent(hash)}`);
+    return properties?.piece_size || 0;
+  }
+
+  async getPieceStates(hash: string): Promise<number[] | null> {
+    const states = await this.request<number[]>(`/api/v2/torrents/pieceStates?hash=${encodeURIComponent(hash)}`);
+    return Array.isArray(states) ? states : null;
+  }
+
   /**
    * Ensures sequential download and first/last piece priority are turned ON.
    * Because qBittorrent endpoints are TOGGLE actions, we check the current state first
@@ -289,12 +302,13 @@ export class QBittorrentClient {
       };
       if (sid) headers['Cookie'] = sid.includes('=') ? sid : `SID=${sid}`;
 
-      await fetch(`${this.baseUrl}/api/v2/torrents/filePrio`, {
+      const response = await fetch(`${this.baseUrl}/api/v2/torrents/filePrio`, {
         method: 'POST',
         headers,
-        body: `hash=${hash}&id=${fileIndex}&priority=7`,
+        body: new URLSearchParams({ hash, id: String(fileIndex), priority: '7' }).toString(),
+        signal: AbortSignal.timeout(10000),
       });
-      return true;
+      return response.ok;
     } catch (err) {
       console.warn(`Failed to prioritize file ${fileIndex} in torrent ${hash}:`, err);
       return false;
@@ -351,7 +365,7 @@ export class QBittorrentClient {
       // File is streamable once video exists (BuiltinPlayer handles buffering until 15MB)
       const downloadedBytes = mainVideo ? mainVideo.progress * mainVideo.size : t.downloaded;
       const minBuffer = 15 * 1024 * 1024; // 15MB initial buffer threshold
-      const isReadyForPlayback = Boolean(mainVideo && downloadedBytes >= minBuffer);
+      const isReadyForPlayback = Boolean(mainVideo && (mainVideo.progress === 1 || downloadedBytes >= minBuffer));
 
       let videoInfo: DownloadingTorrentFile | undefined;
       if (mainVideo) {
@@ -378,7 +392,7 @@ export class QBittorrentClient {
         fLPiecePrio: t.f_l_piece_prio,
         category: t.category,
         tags: t.tags,
-        streamable: Boolean(mainVideo),
+        streamable: isReadyForPlayback,
         streamUrl: mainVideo
           ? `/api/stream/download?hash=${t.hash}&fileIndex=${videoInfo?.index || 0}`
           : undefined,
