@@ -9,7 +9,7 @@
   // Transcoding output may expose a growing buffered duration. The library
   // runtime is the full title duration, independent of how much is encoded.
   manager.setMessageInterceptor(cast.framework.messages.MessageType.MEDIA_STATUS, message => {
-    for (const status of message.status || []) {
+    for (const status of Array.isArray(message.status) ? message.status : [message]) {
       const media = status.media;
       const duration = Number(media?.customData?.playback?.durationSeconds);
       if (media && Number.isFinite(duration) && duration > 0) media.duration = duration;
