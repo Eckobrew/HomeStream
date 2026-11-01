@@ -187,7 +187,7 @@ try {
   const browserProfile = jellyfinCalls.filter(call => call.path.startsWith('/Items/direct/PlaybackInfo')).at(-1).body.DeviceProfile;
   assert.ok(browserProfile.DirectPlayProfiles[0].VideoCodec.includes('av1'));
   assert.ok(!browserProfile.DirectPlayProfiles[0].VideoCodec.includes('hevc'));
-  assert.equal(browserProfile.TranscodingProfiles[0].Protocol, 'http');
+  assert.equal(browserProfile.TranscodingProfiles[0].Protocol, 'hls');
   const stream = await api('playback?itemId=episode&userId=household-profile&forceTranscode=true');
   assert.equal(stream.isTranscoding, true);
   assert.equal(stream.streamUrl, `${jellyfinUrl}/Videos/episode/master.m3u8?api_key=fake-stream-key`);
@@ -197,7 +197,8 @@ try {
   assert.deepEqual(negotiation.body.DeviceProfile.DirectPlayProfiles, []);
   assert.equal(negotiation.body.DeviceProfile.TranscodingProfiles[0].VideoCodec, 'h264');
   await api('progress', 200, { itemId: 'episode', userId: 'household-profile', positionTicks: 1000, isStarted: true });
-  assert.equal(jellyfinCalls.at(-1).path, '/Sessions/Playing');
+  assert.ok(jellyfinCalls.some(call => call.path === '/Sessions/Playing'));
+  assert.ok(jellyfinCalls.some(call => call.path === '/UserItems/episode/UserData?userId=linked-jellyfin-user' && call.body.PlaybackPositionTicks === 1000));
   await api('progress', 200, { itemId: 'episode', userId: 'household-profile', positionTicks: 1234560000, isPaused: true });
   const progress = jellyfinCalls.find(call => call.path === '/Sessions/Playing/Progress');
   assert.equal(progress.body.UserId, 'linked-jellyfin-user');
