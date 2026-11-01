@@ -1,3 +1,4 @@
+import { validRequestOrigin } from '@/lib/request-origin';
 import { NextRequest, NextResponse } from 'next/server';
 import { isRequestLocalOrTailscale } from '@/lib/network';
 import { readSession } from '@/lib/session';
@@ -9,8 +10,7 @@ export async function middleware(request: NextRequest) {
   const webhookToken = process.env.HOMESTREAM_WEBHOOK_TOKEN || '';
   if (path === '/api/webhook/arr' && webhookToken.length >= 32 && request.headers.get('authorization') === `Bearer ${webhookToken}`) return NextResponse.next();
   if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method)) {
-    const origin = request.headers.get('origin');
-    if (origin && origin !== request.nextUrl.origin) return NextResponse.json({ error: 'Invalid origin' }, { status: 403 });
+    if (!validRequestOrigin(request)) return NextResponse.json({ error: 'Invalid origin' }, { status: 403 });
   }
   const local = (await isRequestLocalOrTailscale(request)).isLocalOrTailscale;
   const session = await readSession(request.cookies.get('homeflix_session')?.value, 'web');

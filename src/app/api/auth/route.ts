@@ -1,3 +1,4 @@
+import { validRequestOrigin, secureSessionCookie } from '@/lib/request-origin';
 import { denyPasswordlessAdultLogin, isKids } from '@/lib/parental-store';
 import { getHomeflixProfiles } from '@/lib/profiles';
 import { NextRequest, NextResponse } from 'next/server';
@@ -75,8 +76,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const origin = request.headers.get('origin');
-    if (origin && origin !== request.nextUrl.origin) return NextResponse.json({ error: 'Invalid origin' }, { status: 403 });
+    if (!validRequestOrigin(request)) return NextResponse.json({ error: 'Invalid origin' }, { status: 403 });
     const body = await request.json();
     const action = body.action || 'login';
 
@@ -118,10 +118,10 @@ export async function POST(request: NextRequest) {
         Username: username.trim(),
         Pw: password || '',
       }),
+      signal: AbortSignal.timeout(15000),
     });
 
     if (!authRes.ok) {
-      const errText = await authRes.text();
       return NextResponse.json(
         { success: false, error: 'Invalid username or password' },
         { status: 401 }
@@ -152,7 +152,7 @@ export async function POST(request: NextRequest) {
     // 30 days session
     response.cookies.set(SESSION_COOKIE_NAME, encodedSession, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: secureSessionCookie(request),
       sameSite: 'lax',
       path: '/',
       maxAge: 30 * 24 * 60 * 60,
@@ -161,7 +161,7 @@ export async function POST(request: NextRequest) {
     // Automatically lock homeflix_profile_id to the logged-in user
     response.cookies.set('homeflix_profile_id', user.Id, {
       httpOnly: false,
-      secure: process.env.NODE_ENV === 'production',
+      secure: secureSessionCookie(request),
       sameSite: 'lax',
       path: '/',
       maxAge: 30 * 24 * 60 * 60,

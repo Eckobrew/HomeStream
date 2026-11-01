@@ -54,6 +54,7 @@ async function authorize(request: NextRequest): Promise<NextResponse | undefined
 }
 
 function directLocal(request: NextRequest): boolean {
+  if (['forwarded', 'x-forwarded-for', 'x-real-ip', 'cf-connecting-ip'].some(header => request.headers.has(header))) return false;
   const value = request.headers.get('x-homestream-socket') || '';
   const proof = request.headers.get('x-homestream-proof') || '';
   const secret = process.env.HOMESTREAM_SESSION_SECRET || '';
@@ -82,7 +83,7 @@ async function dispatch(request: NextRequest, context: Context) {
     }
     const config = getServerConfig();
     if (!config.jellyfinUrl) return NextResponse.json({ error: 'Jellyfin is not configured' }, { status: 503 });
-    const result = await fetch(`${config.jellyfinUrl}/Users/AuthenticateByName`, {
+    const result = await fetch(`${config.jellyfinUrl.replace(/\/+$/, '')}/Users/AuthenticateByName`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'MediaBrowser Client="HomeStream", Device="Android", DeviceId="homestream-android", Version="1.0"' },
       body: JSON.stringify({ Username: body.username.trim(), Pw: body.password }), signal: AbortSignal.timeout(15000),
     });
