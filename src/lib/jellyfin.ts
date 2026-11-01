@@ -279,6 +279,9 @@ export class JellyfinClient {
       const selected = choices.find((entry: { Name: string }) => entry.Name?.toUpperCase() === `GB-${rating}`) || choices.find((entry: { Name: string }) => entry.Name?.toUpperCase() === rating);
       if (!selected || !Number.isFinite(selected.Value)) throw new Error(`Jellyfin does not recognize the ${rating} rating limit`);
       policy = { ...user.Policy, MaxParentalRating: selected.Value,
+        ...(Number.isFinite(selected.RatingScore?.SubScore) ? { MaxParentalSubRating: selected.RatingScore.SubScore } : {}),
+        EnableContentDeletion: false, EnableContentDeletionFromFolders: [], EnablePublicSharing: false,
+        EnableCollectionManagement: false, EnableSubtitleManagement: false, EnableLyricManagement: false,
         BlockUnratedItems: ['Movie', 'Series', 'Trailer', 'Other', 'Book', 'Music', 'ChannelContent', 'LiveTvChannel', 'LiveTvProgram'],
         EnableContentDownloading: false, EnableRemoteControlOfOtherUsers: false, EnableSharedDeviceControl: false,
         EnableLiveTvAccess: false, EnableLiveTvManagement: false, EnableUserPreferenceAccess: false };

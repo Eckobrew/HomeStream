@@ -1,3 +1,4 @@
+import { getServerConfig } from './config';
 import { JellyfinClient } from './jellyfin';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { headers } from 'next/headers';
@@ -188,6 +189,10 @@ async function wrapAdultArtwork(value: unknown, profile: UserProfile): Promise<u
   if (Array.isArray(value)) return Promise.all(value.map(v => wrapAdultArtwork(v, profile)));
   if (!value || typeof value !== 'object') return value;
   const result: Record<string, unknown> = {};
-  for (const [key, child] of Object.entries(value)) result[key] = typeof child === 'string' && ['posterUrl', 'backdropUrl', 'thumbnailUrl'].includes(key) ? imageResource(child, profile, 1000) || child : await wrapAdultArtwork(child, profile);
+  for (const [key, child] of Object.entries(value)) {
+    if (typeof child === 'string' && ['videoStreamUrl', 'streamUrl'].includes(key) && child.startsWith(`${getServerConfig().jellyfinUrl}/Videos/`)) {
+      result[key] = resourceUrl(child, profile, 'stream', 1000);
+    } else result[key] = typeof child === 'string' && ['posterUrl', 'backdropUrl', 'thumbnailUrl'].includes(key) ? imageResource(child, profile, 1000) || child : await wrapAdultArtwork(child, profile);
+  }
   return result;
 }
