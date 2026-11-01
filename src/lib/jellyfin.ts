@@ -198,6 +198,24 @@ export class JellyfinClient {
     return null;
   }
 
+  async matchLibraryTmdbIds(ids: number[], type: 'movie' | 'tv'): Promise<Map<number, string>> {
+    const matches = new Map<number, string>();
+    if (!this.isConfigured() || !ids.length) return matches;
+    const wanted = new Set(ids);
+    try {
+      const uid = await this.getFirstUserId();
+      const response = await fetch(`${this.url}/Users/${encodeURIComponent(uid)}/Items?Recursive=true&IncludeItemTypes=${type === 'movie' ? 'Movie' : 'Series'}&Fields=ProviderIds,LocationType&EnableImages=false&EnableUserData=false`,
+        { headers: this.getHeaders(), next: { revalidate: 120 }, signal: AbortSignal.timeout(10000) });
+      if (!response.ok) return matches;
+      const data = await response.json();
+      for (const item of data.Items || []) {
+        const tmdb = Number(item.ProviderIds?.Tmdb || item.ProviderIds?.tmdb);
+        if (wanted.has(tmdb) && item.Id && item.LocationType !== 'Virtual') matches.set(tmdb, item.Id);
+      }
+    } catch { console.warn('Could not match recommendation availability'); }
+    return matches;
+  }
+
   async findItemByName(name: string, type?: 'movie' | 'tv'): Promise<string | null> {
     if (!this.isConfigured() || !name) return null;
     try {
@@ -960,7 +978,7 @@ export class JellyfinClient {
     try {
       const uid = await this.getFirstUserId();
       const res = await fetch(
-        `${this.url}/Users/${uid}/Items/${itemId}?Fields=Overview,Genres,OfficialRating,CommunityRating,People,BackdropImageTags,ChildCount,RunTimeTicks,LocationType,SeriesId,SeriesName,MediaStreams,Width,Height,MediaSources`,
+        `${this.url}/Users/${uid}/Items/${itemId}?Fields=Overview,Genres,OfficialRating,CommunityRating,People,BackdropImageTags,ChildCount,RunTimeTicks,ProviderIds,LocationType,SeriesId,SeriesName,MediaStreams,Width,Height,MediaSources`,
         { headers: this.getHeaders(), cache: 'no-store' }
       );
       if (!res.ok) return null;
@@ -992,6 +1010,16 @@ export class JellyfinClient {
       console.error('Error fetching item details from Jellyfin:', e);
       return null;
     }
+  }
+
+  async getRecommendationSeed(itemId: string): Promise<MediaItem | null> {
+    if (!this.isConfigured() || !itemId) return null;
+    try {
+      const uid = await this.getFirstUserId();
+      const response = await fetch(`${this.url}/Users/${encodeURIComponent(uid)}/Items/${encodeURIComponent(itemId)}?Fields=ProviderIds,Genres,People,Overview,SeriesId,SeriesName,LocationType`,
+        { headers: this.getHeaders(), next: { revalidate: 120 }, signal: AbortSignal.timeout(8000) });
+      return response.ok ? this.mapJellyfinItem(await response.json()) : null;
+    } catch { return null; }
   }
 
   async getSimilarItems(itemId: string, limit = 12): Promise<MediaItem[]> {

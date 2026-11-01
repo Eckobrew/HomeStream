@@ -142,3 +142,21 @@ existing device registry (two registered local devices were observed).
 - Added authenticated `continue-watching` API for TV launcher synchronization.
   It bypasses resume-history caching and returns failure rather than an empty
   history when Jellyfin is unavailable, preserving existing launcher cards.
+
+## Expanded discovery and recommendation relevance
+
+- Expanded from eight grouped movie/seven grouped TV categories to 19 movie and
+  16 TV genres. Added recent releases, highly rated and unwatched library rows,
+  plus movies under 100 minutes. Empty categories are omitted.
+- Category rows are limited to 20 titles and discovery requests to four concurrent
+  calls, with provider timeouts and a per-request discovery budget. Category
+  listings no longer resolve the first episode for every series in the library.
+- More Like This no longer alternates in a fixed quota of Jellyfin suggestions.
+  It preserves Seerr's recommendation order across library and requestable titles.
+  A single batched TMDB-ID lookup marks truly available recommendations locally.
+- Fixed episode-to-series TMDB resolution, required exact title/type and compatible
+  year when resolving missing provider IDs, removed the source title and duplicate
+  results, and stopped publishing shared/public recommendation caches.
+- When discovery yields no recommendations, local fallback needs two shared genres,
+  the same director or at least two shared cast members. It does not fill gaps with
+  arbitrary library titles or trending filler.

@@ -207,7 +207,7 @@ export class SeerrClient {
       const endpoint = mediaType === 'tv' ? 'tv' : 'movies';
       const res = await fetch(`${this.url}/api/v1/discover/${endpoint}?genre=${genreId}&page=${page}`, {
         headers: this.getHeaders(),
-        next: { revalidate: 300 },
+        next: { revalidate: 300 }, signal: AbortSignal.timeout(8000),
       });
       if (!res.ok) return [];
       const data = await res.json();
@@ -524,7 +524,7 @@ export class SeerrClient {
       const type = mediaType === 'tv' ? 'tv' : 'movie';
       const res = await fetch(
         `${this.url}/api/v1/${type}/${tmdbId}/recommendations?page=${page}`,
-        { headers: this.getHeaders(), next: { revalidate: 3600 } }
+        { headers: this.getHeaders(), next: { revalidate: 3600 }, signal: AbortSignal.timeout(10000) }
       );
       if (!res.ok) return [];
       const data = await res.json();
