@@ -203,6 +203,7 @@ try {
   await api('progress', 200, { itemId: 'episode', userId: 'household-profile', positionTicks: 1234560000, isStopped: true });
   assert.ok(jellyfinCalls.some(call => call.path === '/Sessions/Playing/Stopped'));
   const login = await api('auth/login', 200, { username: 'Viewer', password: 'test-password' }, '');
+  assert.equal((await api('session/status', 200, undefined, login.token)).profile.jellyfinUserId, 'login-user');
   assert.ok(login.token.includes('.'));
   assert.ok(!login.token.includes('upstream-secret'));
   await api('auth/pair', 403, { deviceId: 'cannot-escalate' }, login.token);

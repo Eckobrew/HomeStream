@@ -140,6 +140,10 @@ async function dispatchContent(request: NextRequest, context: Context) {
   }
   if (get && route === 'trailer') return trailer(request);
   if (get && route === 'capabilities') return NextResponse.json({ apiVersion: 1, appName: 'HomeStream', cast: true, jellyfinLogin: true });
+  if (get && route === 'session/status') {
+    const profile = await activeProfile(request);
+    return NextResponse.json({ profile, revision: profile ? kidsPolicyRevision(profile) : '' });
+  }
   if (get && route === 'continue-watching') {
     const uid = await resolveJellyfinUserId(session?.id || request.nextUrl.searchParams.get('userId') || undefined);
     const jellyfin = new JellyfinClient(undefined, undefined, uid);
