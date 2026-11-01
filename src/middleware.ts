@@ -12,7 +12,7 @@ export async function middleware(request: NextRequest) {
     const origin = request.headers.get('origin');
     if (origin && origin !== request.nextUrl.origin) return NextResponse.json({ error: 'Invalid origin' }, { status: 403 });
   }
-  const local = isRequestLocalOrTailscale(request).isLocalOrTailscale;
+  const local = (await isRequestLocalOrTailscale(request)).isLocalOrTailscale;
   const session = await readSession(request.cookies.get('homeflix_session')?.value, 'web');
   const setupToken = process.env.HOMESTREAM_SETUP_TOKEN || '';
   const setup = setupToken.length >= 32 && request.headers.get('authorization') === `Bearer ${setupToken}`;

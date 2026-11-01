@@ -16,7 +16,7 @@ async function handleGET(request: NextRequest) {
     ? Number(searchParams.get('startTimeTicks'))
     : undefined;
 
-  if (!itemId) {
+  if (!itemId || !/^[a-zA-Z0-9_-]{1,128}$/.test(itemId) || (startTimeTicks !== undefined && (!Number.isSafeInteger(startTimeTicks) || startTimeTicks < 0))) {
     return NextResponse.json({ error: 'itemId is required' }, { status: 400 });
   }
 

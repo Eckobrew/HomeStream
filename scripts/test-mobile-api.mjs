@@ -14,6 +14,7 @@ const origin = `http://127.0.0.1:${port}`;
 let output = '';
 let server;
 const jellyfinCalls = [];
+let rejectProgress = false;
 let childPolicy = { IsAdministrator: false, BlockUnratedItems: [] };
 const jellyfin = createServer(async (request, response) => {
   let text = '';
@@ -45,7 +46,7 @@ const jellyfin = createServer(async (request, response) => {
   } else if (parsedUrl.pathname === '/Videos/allowed/stream.mp4') {
     response.setHeader('Content-Type', 'video/mp4'); response.end('safe-movie-bytes');
   } else if (request.url === '/Users/AuthenticateByName') {
-    response.end(JSON.stringify({ User: { Id: 'login-user', Name: 'Viewer', Policy: { IsAdministrator: false } }, AccessToken: 'upstream-secret' }));
+    response.end(JSON.stringify({ User: { Id: JSON.parse(text).Username === 'Child' ? 'kid-user' : 'login-user', Name: JSON.parse(text).Username === 'Child' ? 'Child' : 'Viewer', Policy: { IsAdministrator: false } }, AccessToken: 'upstream-secret' }));
   } else if (/^\/Users\/[^/]+\/Items\/episode$/.test(request.url)) {
     response.end(JSON.stringify({ Id: 'episode', Name: 'Episode 1', Type: 'Episode', SeriesId: 'test-series', ParentIndexNumber: 1, IndexNumber: 1 }));
   } else if (request.url.startsWith('/Shows/test-series/Episodes')) {
@@ -68,6 +69,7 @@ const jellyfin = createServer(async (request, response) => {
       TranscodingUrl: '/Videos/episode/master.m3u8?api_key=fake-stream-key',
     }] }));
   } else if ((request.url === '/Sessions/Playing' || request.url.startsWith('/Sessions/Playing/'))) {
+    if (rejectProgress) response.statusCode = 503;
     response.end('{}');
   } else {
     response.statusCode = 404; response.end('{}');
@@ -230,6 +232,12 @@ try {
   assert.equal(webProgress.status, 200);
   assert.equal(jellyfinCalls.at(-1).body.UserId, 'login-user');
   assert.equal(jellyfinCalls.at(-1).token, 'upstream-secret');
+  assert.equal((await fetch(`${origin}/api/playback/progress`, { method: 'POST', headers: { cookie, 'Content-Type': 'application/json' }, body: JSON.stringify({ itemId: 'episode', positionTicks: -1 }) })).status, 400);
+  await api('subtitles?itemId=episode&mediaSourceId=../secret&index=0', 400);
+  await api('subtitles?itemId=episode&index=1oops', 400);
+  rejectProgress = true;
+  await api('progress', 502, { itemId: 'episode', positionTicks: 100 }, login.token);
+  rejectProgress = false;
   for (const [range, expected, content] of [['bytes=2-5', 206, '2345'], ['bytes=-4', 206, 'cdef'], ['bytes=12-999', 206, 'cdef'], ['bytes=99-', 416, null], ['bytes=4-2', 416, null], ['bytes=0-1,4-5', 416, null]]) {
     const response = await fetch(`${origin}/api/mobile/v1/stream/download?path=clip.mp4`, { headers: { Authorization: `Bearer ${token}`, Range: range } });
     assert.equal(response.status, expected, range);
@@ -249,6 +257,15 @@ try {
   assert.ok(childPolicy.BlockUnratedItems.includes('Movie'));
   assert.equal(childPolicy.EnableContentDownloading, false);
   await api('profiles/select', 200, { profileId: added.profile.id }, legacyDeviceToken);
+  assert.ok(Array.isArray((await api('request?type=movie', 200, undefined, legacyDeviceToken)).profiles));
+  const childLogin = await fetch(`${origin}/api/auth`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'Child', password: 'child-password' }) });
+  assert.equal(childLogin.status, 200);
+  const childCookie = childLogin.headers.get('set-cookie').split(';')[0];
+  const preview = await fetch(`${origin}/api/preview-stream?itemId=allowed`, { headers: { cookie: childCookie }, redirect: 'manual' });
+  assert.equal(preview.status, 307);
+  assert.ok(preview.headers.get('location').includes('/parental-resource?ticket='));
+  assert.ok(!preview.headers.get('location').includes('api_key'));
+
   await api('media/adult?userId=linked-jellyfin-user', 403, undefined, legacyDeviceToken);
   await api('media/unrated', 403, undefined, legacyDeviceToken);
   await api('playback?itemId=adult', 403, undefined, legacyDeviceToken);

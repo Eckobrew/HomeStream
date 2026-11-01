@@ -11,8 +11,8 @@ async function handleGET(request: NextRequest) {
   const mediaSourceId = searchParams.get('mediaSourceId') || itemId || '';
   const indexStr = searchParams.get('index');
 
-  if (!itemId) {
-    return NextResponse.json({ error: 'itemId is required' }, { status: 400 });
+  if (!itemId || !/^[a-zA-Z0-9_-]{1,128}$/.test(itemId) || !/^[a-zA-Z0-9_-]{1,128}$/.test(mediaSourceId) || (indexStr !== null && (!/^\d+$/.test(indexStr) || !Number.isSafeInteger(Number(indexStr))))) {
+    return NextResponse.json({ error: 'Valid itemId, mediaSourceId and subtitle index required' }, { status: 400 });
   }
 
   const jellyfin = new JellyfinClient();
@@ -29,7 +29,7 @@ async function handleGET(request: NextRequest) {
       const res = await fetch(vttUrl, {
         headers: {
           Accept: 'text/vtt, text/plain, */*',
-        },
+        }, redirect: 'error', signal: AbortSignal.timeout(15000), cache: 'no-store',
       });
 
       if (!res.ok) {
@@ -44,13 +44,13 @@ async function handleGET(request: NextRequest) {
         status: 200,
         headers: {
           'Content-Type': 'text/vtt; charset=utf-8',
-          'Cache-Control': 'public, max-age=3600',
+          'Cache-Control': 'no-store',
           'Access-Control-Allow-Origin': '*',
         },
       });
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return new NextResponse(`Error fetching subtitle: ${msg}`, { status: 500 });
+      console.warn('Subtitle fetch failed');
+      return new NextResponse('Subtitle temporarily unavailable', { status: 502 });
     }
   }
 

@@ -22,6 +22,7 @@ async function handleGET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  if (!/^[a-zA-Z0-9_-]{1,128}$/.test(id)) return NextResponse.json({ error: 'Invalid media ID' }, { status: 400 });
 
   const profileId =
     request.nextUrl.searchParams.get('userId') ||

@@ -109,16 +109,11 @@ async function handleGET(
       console.warn('Could not auto-discover views, using defaults:', e);
     }
 
-    // Fallbacks if not auto-discovered
-    if (!libraryParentId) {
-      if (libraryType === 'movies') libraryParentId = 'f137a2dd21bbc1b99aa5c0f6bf02a805';
-      if (libraryType === 'tv') libraryParentId = 'a656b907eb3a73532e40e44b968d0225';
-      if (libraryType === 'youtube') libraryParentId = '34f331a89ce405e2b877d68d5ee4d4a2';
-    }
+    if (libraryType === 'youtube' && !libraryParentId) return NextResponse.json({ type: libraryType, title: libraryTitle, items: [], totalCount: 0, filteredCount: 0, availableLetters: [] });
 
     // 2. Query items sorted by SortName Ascending (A-Z)
     // Note: For TV Shows, per user instruction: "In the TV shows sidebar thing just show the series, not individual episodes/seasons"
-    let queryParams = `SortBy=SortName&SortOrder=Ascending&Recursive=true&Fields=Overview,Genres,OfficialRating,CommunityRating,People,BackdropImageTags,ChildCount,RunTimeTicks,LocationType,MediaStreams,Width,Height,MediaSources`;
+    let queryParams = `SortBy=SortName&SortOrder=Ascending&Recursive=true&Fields=ProviderIds,Overview,Genres,OfficialRating,CommunityRating,People,BackdropImageTags,ChildCount,RunTimeTicks,LocationType,MediaStreams,Width,Height,MediaSources`;
 
     if (libraryType === 'movies') {
       queryParams += `&IncludeItemTypes=Movie`;
@@ -149,11 +144,6 @@ async function handleGET(
     );
 
     let mappedItems: MediaItem[] = rawItems.map((item) => (jellyfin as any).mapJellyfinItem(item));
-
-    // For TV series, attach first playable episode previews
-    if (libraryType === 'tv') {
-      mappedItems = await jellyfin.attachPlayableStreamsToItems(mappedItems);
-    }
 
     // 3. Compute available letters across all library items
     const lettersSet = new Set<string>();

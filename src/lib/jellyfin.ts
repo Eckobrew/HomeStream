@@ -93,6 +93,10 @@ export class JellyfinClient {
     this.userId = requestParentalProfile()?.jellyfinUserId || session?.id || userId || config.jellyfinUserId;
   }
 
+  private fetch(input: string, options: RequestInit & { next?: { revalidate?: number } } = {}) {
+    return fetch(input, { ...options, redirect: 'error', signal: options.signal || AbortSignal.timeout(15000) });
+  }
+
   isConfigured(): boolean {
     return Boolean(this.url && this.apiKey);
   }
@@ -111,7 +115,7 @@ export class JellyfinClient {
     }
 
     try {
-      const res = await fetch(`${this.url}/System/Info/Public`, {
+      const res = await this.fetch(`${this.url}/System/Info/Public`, {
         headers: this.getHeaders(),
         next: { revalidate: 0 },
       });
@@ -135,7 +139,7 @@ export class JellyfinClient {
   async getFirstUserId(): Promise<string> {
     if (this.userId) return this.userId;
     try {
-      const res = await fetch(`${this.url}/Users`, {
+      const res = await this.fetch(`${this.url}/Users`, {
         headers: this.getHeaders(),
       });
       if (res.ok) {
@@ -159,7 +163,7 @@ export class JellyfinClient {
   async findUserByName(name: string): Promise<{ id: string; name: string } | null> {
     if (!this.isConfigured() || !name) return null;
     try {
-      const res = await fetch(`${this.url}/Users`, {
+      const res = await this.fetch(`${this.url}/Users`, {
         headers: this.getHeaders(),
         cache: 'no-store',
       });
@@ -184,7 +188,7 @@ export class JellyfinClient {
     try {
       const uid = await this.getFirstUserId();
       const includeTypes = type === 'movie' ? 'Movie' : type === 'tv' ? 'Series' : 'Movie,Series';
-      const res = await fetch(
+      const res = await this.fetch(
         `${this.url}/Users/${uid}/Items?Recursive=true&IncludeItemTypes=${includeTypes}&Fields=ProviderIds`,
         { headers: this.getHeaders(), cache: 'no-store' }
       );
@@ -206,7 +210,7 @@ export class JellyfinClient {
     const wanted = new Set(ids);
     try {
       const uid = await this.getFirstUserId();
-      const response = await fetch(`${this.url}/Users/${encodeURIComponent(uid)}/Items?Recursive=true&IncludeItemTypes=${type === 'movie' ? 'Movie' : 'Series'}&Fields=ProviderIds,LocationType&EnableImages=false&EnableUserData=false`,
+      const response = await this.fetch(`${this.url}/Users/${encodeURIComponent(uid)}/Items?Recursive=true&IncludeItemTypes=${type === 'movie' ? 'Movie' : 'Series'}&Fields=ProviderIds,LocationType&EnableImages=false&EnableUserData=false`,
         { headers: this.getHeaders(), next: { revalidate: 120 }, signal: AbortSignal.timeout(10000) });
       if (!response.ok) return matches;
       const data = await response.json();
@@ -223,7 +227,7 @@ export class JellyfinClient {
     try {
       const uid = await this.getFirstUserId();
       const includeTypes = type === 'movie' ? 'Movie' : type === 'tv' ? 'Series' : 'Movie,Series';
-      const res = await fetch(
+      const res = await this.fetch(
         `${this.url}/Users/${uid}/Items?SearchTerm=${encodeURIComponent(name)}&IncludeItemTypes=${includeTypes}&Fields=ProviderIds`,
         { headers: this.getHeaders(), cache: 'no-store' }
       );
@@ -241,7 +245,7 @@ export class JellyfinClient {
   async createUser(name: string, password?: string): Promise<{ id: string; name: string } | null> {
     if (!this.isConfigured() || !name) return null;
     try {
-      const res = await fetch(`${this.url}/Users/New`, {
+      const res = await this.fetch(`${this.url}/Users/New`, {
         method: 'POST',
         headers: {
           ...this.getHeaders(),
@@ -265,7 +269,7 @@ export class JellyfinClient {
 
   async applyKidsPolicy(userId: string, rating: KidsRating | null): Promise<void> {
     const headers = { ...this.getHeaders(), 'Content-Type': 'application/json' };
-    const userResponse = await fetch(`${this.url}/Users/${encodeURIComponent(userId)}`, { headers, cache: 'no-store', signal: AbortSignal.timeout(10000) });
+    const userResponse = await this.fetch(`${this.url}/Users/${encodeURIComponent(userId)}`, { headers, cache: 'no-store', signal: AbortSignal.timeout(10000) });
     if (!userResponse.ok) throw new Error('Cannot read the linked Jellyfin account policy');
     const user = await userResponse.json();
     if (rating && user.Policy?.IsAdministrator) throw new Error('Kids profiles must use a non-administrator Jellyfin account');
@@ -273,7 +277,7 @@ export class JellyfinClient {
     if (rating) {
       if (!user.Policy) throw new Error('Jellyfin account policy unavailable');
       backupPolicy(userId, user.Policy);
-      const ratings = await fetch(`${this.url}/Localization/ParentalRatings`, { headers, signal: AbortSignal.timeout(10000) });
+      const ratings = await this.fetch(`${this.url}/Localization/ParentalRatings`, { headers, signal: AbortSignal.timeout(10000) });
       if (!ratings.ok) throw new Error('Jellyfin parental ratings unavailable');
       const choices = await ratings.json();
       const selected = choices.find((entry: { Name: string }) => entry.Name?.toUpperCase() === `GB-${rating}`) || choices.find((entry: { Name: string }) => entry.Name?.toUpperCase() === rating);
@@ -287,10 +291,10 @@ export class JellyfinClient {
         EnableLiveTvAccess: false, EnableLiveTvManagement: false, EnableUserPreferenceAccess: false };
     }
     if (!policy) return;
-    const response = await fetch(`${this.url}/Users/${encodeURIComponent(userId)}/Policy`, { method: 'POST', headers, body: JSON.stringify(policy), signal: AbortSignal.timeout(10000) });
+    const response = await this.fetch(`${this.url}/Users/${encodeURIComponent(userId)}/Policy`, { method: 'POST', headers, body: JSON.stringify(policy), signal: AbortSignal.timeout(10000) });
     if (!response.ok) throw new Error('Jellyfin refused the parental-control policy; profile was not saved');
     if (rating) {
-      const verified = await fetch(`${this.url}/Users/${encodeURIComponent(userId)}`, { headers, cache: 'no-store', signal: AbortSignal.timeout(10000) });
+      const verified = await this.fetch(`${this.url}/Users/${encodeURIComponent(userId)}`, { headers, cache: 'no-store', signal: AbortSignal.timeout(10000) });
       const applied = verified.ok ? (await verified.json()).Policy : null;
       if (!applied || applied.IsAdministrator || applied.MaxParentalRating !== policy.MaxParentalRating || !policy.BlockUnratedItems || !(policy.BlockUnratedItems as string[]).every(value => applied.BlockUnratedItems?.includes(value))) throw new Error('Jellyfin did not apply the parental-control policy');
     }
@@ -299,7 +303,7 @@ export class JellyfinClient {
   async deleteUser(userId: string): Promise<boolean> {
     if (!this.isConfigured() || !userId) return false;
     try {
-      const res = await fetch(`${this.url}/Users/${userId}`, {
+      const res = await this.fetch(`${this.url}/Users/${userId}`, {
         method: 'DELETE',
         headers: this.getHeaders(),
       });
@@ -333,7 +337,7 @@ export class JellyfinClient {
     }
 
     try {
-      const res = await fetch(`${this.url}/Users`, {
+      const res = await this.fetch(`${this.url}/Users`, {
         headers: this.getHeaders(),
         next: { revalidate: 60 },
       });
@@ -487,7 +491,7 @@ export class JellyfinClient {
         },
       };
 
-      const res = await fetch(
+      const res = await this.fetch(
         `${this.url}/Items/${encodeURIComponent(targetItemId)}/PlaybackInfo?UserId=${uid}${startTimeTicksParam}`,
         {
           method: 'POST',
@@ -561,7 +565,7 @@ export class JellyfinClient {
   async reportPlaybackStarted(itemId: string, positionTicks: number, isPaused = false): Promise<boolean> {
     if (!this.isConfigured() || !itemId) return false;
     const uid = await this.getFirstUserId();
-    const response = await fetch(`${this.url}/Sessions/Playing`, {
+    const response = await this.fetch(`${this.url}/Sessions/Playing`, {
       method: 'POST', headers: { ...this.getHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify({ ItemId: itemId, UserId: uid, PositionTicks: positionTicks, IsPaused: isPaused, CanSeek: true }),
     });
@@ -572,7 +576,7 @@ export class JellyfinClient {
     if (!this.isConfigured() || !itemId) return false;
     try {
       const uid = await this.getFirstUserId();
-      await fetch(`${this.url}/Sessions/Playing/Progress`, {
+      const response = await this.fetch(`${this.url}/Sessions/Playing/Progress`, {
         method: 'POST',
         headers: {
           ...this.getHeaders(),
@@ -585,7 +589,7 @@ export class JellyfinClient {
           IsPaused: isPaused,
         }),
       });
-      return true;
+      return response.ok;
     } catch {
       return false;
     }
@@ -595,7 +599,7 @@ export class JellyfinClient {
     if (!this.isConfigured() || !itemId) return false;
     try {
       const uid = await this.getFirstUserId();
-      await fetch(`${this.url}/Sessions/Playing/Stopped`, {
+      const response = await this.fetch(`${this.url}/Sessions/Playing/Stopped`, {
         method: 'POST',
         headers: {
           ...this.getHeaders(),
@@ -607,7 +611,7 @@ export class JellyfinClient {
           PositionTicks: positionTicks,
         }),
       });
-      return true;
+      return response.ok;
     } catch {
       return false;
     }
@@ -616,14 +620,14 @@ export class JellyfinClient {
   getSubtitleStreamUrl(itemId: string, mediaSourceId: string, index: number): string {
     if (!this.url || !itemId) return '';
     const sourceId = mediaSourceId || itemId;
-    return `${this.url}/Videos/${itemId}/${sourceId}/Subtitles/${index}/0/Stream.vtt?api_key=${this.apiKey}`;
+    return `${this.url}/Videos/${encodeURIComponent(itemId)}/${encodeURIComponent(sourceId)}/Subtitles/${index}/0/Stream.vtt?api_key=${encodeURIComponent(this.apiKey)}`;
   }
 
   async getSubtitles(itemId: string): Promise<SubtitleTrack[]> {
     if (!this.isConfigured() || !itemId) return [];
     try {
       const uid = await this.getFirstUserId();
-      const res = await fetch(
+      const res = await this.fetch(
         `${this.url}/Users/${uid}/Items/${itemId}?Fields=MediaStreams,MediaSources`,
         { headers: this.getHeaders() }
       );
@@ -824,7 +828,7 @@ export class JellyfinClient {
       const genreWeights: Record<string, number> = {};
 
       // 1. Fetch Resume items (weight: 3)
-      const resumeRes = await fetch(
+      const resumeRes = await this.fetch(
         `${this.url}/UserItems/Resume?userId=${uid}&Limit=20&Fields=Genres`,
         { headers: this.getHeaders(), next: { revalidate: 30 } }
       );
@@ -838,7 +842,7 @@ export class JellyfinClient {
       }
 
       // 2. Fetch Played / Watched items (weight: 1)
-      const playedRes = await fetch(
+      const playedRes = await this.fetch(
         `${this.url}/Users/${uid}/Items?SortBy=DatePlayed&SortOrder=Descending&Filters=IsPlayed&Limit=30&Recursive=true&Fields=Genres`,
         { headers: this.getHeaders(), next: { revalidate: 60 } }
       );
@@ -861,11 +865,23 @@ export class JellyfinClient {
     }
   }
 
+  async searchMedia(query: string): Promise<MediaItem[]> {
+    if (!this.isConfigured() || !query.trim()) return [];
+    const uid = await this.getFirstUserId();
+    const params = new URLSearchParams({ SearchTerm: query.trim().slice(0, 200), IncludeItemTypes: 'Movie,Series', Recursive: 'true', Limit: '40', Fields: 'ProviderIds,Overview,Genres,OfficialRating,CommunityRating,RunTimeTicks,LocationType,MediaStreams,SeriesId,SeriesName' });
+    try {
+      const response = await this.fetch(`${this.url}/Users/${encodeURIComponent(uid)}/Items?${params}`, { headers: this.getHeaders(), cache: 'no-store' });
+      if (!response.ok) return [];
+      const data = await response.json();
+      return (data.Items || []).filter((item: JellyfinItem) => item.LocationType !== 'Virtual').map((item: JellyfinItem) => this.mapJellyfinItem(item));
+    } catch { return []; }
+  }
+
   async getResumeItems(strict = false): Promise<MediaItem[]> {
     if (!this.isConfigured()) { if (strict) throw new Error('Jellyfin not configured'); return []; }
     try {
       const uid = await this.getFirstUserId();
-      const res = await fetch(
+      const res = await this.fetch(
         `${this.url}/UserItems/Resume?userId=${uid}&Limit=16&Fields=Overview,Genres,OfficialRating,CommunityRating,People,RunTimeTicks,LocationType,MediaStreams,Width,Height,MediaSources,SeriesId,SeriesName,SeasonId,IndexNumber,ParentIndexNumber`,
         { headers: this.getHeaders(), ...(strict ? { cache: 'no-store' as const } : { next: { revalidate: 30 } }) }
       );
@@ -888,7 +904,7 @@ export class JellyfinClient {
     if (!this.isConfigured()) return [];
     try {
       const uid = await this.getFirstUserId();
-      const res = await fetch(
+      const res = await this.fetch(
         `${this.url}/Users/${uid}/Items?IncludeItemTypes=${type}&SortBy=DateCreated&SortOrder=Descending&Limit=${limit}&Recursive=true&Fields=Overview,Genres,OfficialRating,CommunityRating,People,BackdropImageTags,ChildCount,RunTimeTicks,LocationType,MediaStreams,Width,Height,MediaSources`,
         { headers: this.getHeaders(), next: { revalidate: 60 } }
       );
@@ -910,7 +926,7 @@ export class JellyfinClient {
     if (!this.isConfigured()) return [];
     try {
       const uid = await this.getFirstUserId();
-      const res = await fetch(
+      const res = await this.fetch(
         `${this.url}/Users/${uid}/Items?IncludeItemTypes=Movie,Series&SortBy=CommunityRating&SortOrder=Descending&Limit=${limit}&Recursive=true&Fields=Overview,Genres,OfficialRating,CommunityRating,People,BackdropImageTags,ChildCount,RunTimeTicks,LocationType,MediaStreams,Width,Height,MediaSources`,
         { headers: this.getHeaders(), next: { revalidate: 120 } }
       );
@@ -930,7 +946,7 @@ export class JellyfinClient {
     try {
       const uid = await this.getFirstUserId();
       // First check NextUp for this specific series
-      const nextUpRes = await fetch(
+      const nextUpRes = await this.fetch(
         `${this.url}/Shows/NextUp?SeriesId=${seriesId}&UserId=${uid}&Limit=1`,
         { headers: this.getHeaders(), next: { revalidate: 60 } }
       );
@@ -941,7 +957,7 @@ export class JellyfinClient {
       }
 
       // Fallback: fetch non-missing episodes of the series, skipping Virtual or Specials
-      const epRes = await fetch(
+      const epRes = await this.fetch(
         `${this.url}/Shows/${seriesId}/Episodes?UserId=${uid}&IsMissing=false&Limit=30&Fields=LocationType,ParentIndexNumber,IndexNumber`,
         { headers: this.getHeaders(), next: { revalidate: 120 } }
       );
@@ -966,7 +982,7 @@ export class JellyfinClient {
 
     try {
       const uid = await this.getFirstUserId();
-      const nextUpRes = await fetch(
+      const nextUpRes = await this.fetch(
         `${this.url}/Shows/NextUp?UserId=${uid}&Limit=100`,
         { headers: this.getHeaders(), next: { revalidate: 60 } }
       );
@@ -1012,7 +1028,7 @@ export class JellyfinClient {
     if (!this.isConfigured()) return null;
     try {
       const uid = await this.getFirstUserId();
-      const res = await fetch(
+      const res = await this.fetch(
         `${this.url}/Users/${uid}/Items/${itemId}?Fields=Overview,Genres,OfficialRating,CommunityRating,People,BackdropImageTags,ChildCount,RunTimeTicks,ProviderIds,LocationType,SeriesId,SeriesName,MediaStreams,Width,Height,MediaSources`,
         { headers: this.getHeaders(), cache: 'no-store' }
       );
@@ -1051,7 +1067,7 @@ export class JellyfinClient {
     if (!this.isConfigured() || !itemId) return null;
     try {
       const uid = await this.getFirstUserId();
-      const response = await fetch(`${this.url}/Users/${encodeURIComponent(uid)}/Items/${encodeURIComponent(itemId)}?Fields=ProviderIds,Genres,People,Overview,SeriesId,SeriesName,LocationType`,
+      const response = await this.fetch(`${this.url}/Users/${encodeURIComponent(uid)}/Items/${encodeURIComponent(itemId)}?Fields=ProviderIds,Genres,People,Overview,SeriesId,SeriesName,LocationType`,
         { headers: this.getHeaders(), next: { revalidate: 120 }, signal: AbortSignal.timeout(8000) });
       return response.ok ? this.mapJellyfinItem(await response.json()) : null;
     } catch { return null; }
@@ -1061,7 +1077,7 @@ export class JellyfinClient {
     if (!this.isConfigured() || !itemId) return [];
     try {
       const uid = await this.getFirstUserId();
-      const res = await fetch(
+      const res = await this.fetch(
         `${this.url}/Items/${itemId}/Similar?userId=${uid}&limit=${limit}&Fields=Overview,Genres,OfficialRating,CommunityRating,People,BackdropImageTags,RunTimeTicks,ProviderIds,LocationType`,
         { headers: this.getHeaders(), next: { revalidate: 300 } }
       );
@@ -1077,7 +1093,7 @@ export class JellyfinClient {
 
   async setWatched(itemId: string, played: boolean): Promise<boolean> {
     const uid = await this.getFirstUserId();
-    const response = await fetch(`${this.url}/Users/${encodeURIComponent(uid)}/PlayedItems/${encodeURIComponent(itemId)}`, {
+    const response = await this.fetch(`${this.url}/Users/${encodeURIComponent(uid)}/PlayedItems/${encodeURIComponent(itemId)}`, {
       method: played ? 'POST' : 'DELETE', headers: this.getHeaders(), cache: 'no-store',
     });
     return response.ok;
@@ -1085,12 +1101,12 @@ export class JellyfinClient {
 
   async getEpisodeQueue(itemId: string): Promise<MediaItem[]> {
     const uid = await this.getFirstUserId();
-    const response = await fetch(`${this.url}/Users/${encodeURIComponent(uid)}/Items/${encodeURIComponent(itemId)}`, { headers: this.getHeaders(), cache: 'no-store' });
+    const response = await this.fetch(`${this.url}/Users/${encodeURIComponent(uid)}/Items/${encodeURIComponent(itemId)}`, { headers: this.getHeaders(), cache: 'no-store' });
     if (!response.ok) throw new Error('Episode not found');
     const current: JellyfinItem = await response.json();
     const seriesId = current.Type === 'Series' ? current.Id : current.SeriesId;
     if (!seriesId) return [];
-    const episodes = await fetch(`${this.url}/Shows/${encodeURIComponent(seriesId)}/Episodes?UserId=${encodeURIComponent(uid)}&IsMissing=false&Fields=Overview,RunTimeTicks,IndexNumber,ParentIndexNumber,LocationType,UserData,SeriesId,SeriesName&SortBy=ParentIndexNumber,IndexNumber&SortOrder=Ascending`, { headers: this.getHeaders(), cache: 'no-store' });
+    const episodes = await this.fetch(`${this.url}/Shows/${encodeURIComponent(seriesId)}/Episodes?UserId=${encodeURIComponent(uid)}&IsMissing=false&Fields=Overview,RunTimeTicks,IndexNumber,ParentIndexNumber,LocationType,UserData,SeriesId,SeriesName&SortBy=ParentIndexNumber,IndexNumber&SortOrder=Ascending`, { headers: this.getHeaders(), cache: 'no-store' });
     if (!episodes.ok) throw new Error('Episodes unavailable');
     const data = await episodes.json();
     return (data.Items || []).filter((episode: JellyfinItem) => episode.LocationType !== 'Virtual' && (current.ParentIndexNumber === 0 || (episode.ParentIndexNumber ?? 1) > 0))
@@ -1102,7 +1118,7 @@ export class JellyfinClient {
     if (!this.isConfigured()) return [];
     try {
       const uid = await this.getFirstUserId();
-      const res = await fetch(
+      const res = await this.fetch(
         `${this.url}/Shows/${seriesId}/Seasons?userId=${uid}&Fields=Overview,ItemCounts`,
         { headers: this.getHeaders(), cache: 'no-store' }
       );
@@ -1112,7 +1128,7 @@ export class JellyfinClient {
 
       if (!data.Items || data.Items.length === 0) {
         // Fallback: Fetch all episodes directly for the series and group by ParentIndexNumber
-        const allEpRes = await fetch(
+        const allEpRes = await this.fetch(
           `${this.url}/Shows/${seriesId}/Episodes?userId=${uid}&Fields=Overview,RunTimeTicks,IndexNumber,ParentIndexNumber,LocationType,UserData,ImageTags`,
           { headers: this.getHeaders(), cache: 'no-store' }
         );
@@ -1162,7 +1178,7 @@ export class JellyfinClient {
 
       for (const s of data.Items || []) {
         // Fetch episodes for season
-        const epRes = await fetch(
+        const epRes = await this.fetch(
           `${this.url}/Shows/${seriesId}/Episodes?seasonId=${s.Id}&userId=${uid}&Fields=Overview,RunTimeTicks,IndexNumber,LocationType,UserData,ImageTags`,
           { headers: this.getHeaders(), cache: 'no-store' }
         );
@@ -1218,7 +1234,7 @@ export class JellyfinClient {
     if (!this.isConfigured() || !itemId) return [];
     try {
       const uid = await this.getFirstUserId();
-      const itemRes = await fetch(
+      const itemRes = await this.fetch(
         `${this.url}/Users/${uid}/Items/${itemId}?Fields=Collections,ProviderIds`,
         { headers: this.getHeaders(), cache: 'no-store' }
       );
@@ -1227,7 +1243,7 @@ export class JellyfinClient {
       const collections = itemData.Collections || [];
       if (collections.length > 0) {
         const colId = collections[0].Id;
-        const colItemsRes = await fetch(
+        const colItemsRes = await this.fetch(
           `${this.url}/Users/${uid}/Items?ParentId=${colId}&SortBy=ProductionYear,SortName&SortOrder=Ascending&Fields=Overview,Genres,OfficialRating,CommunityRating,People,BackdropImageTags,ChildCount,RunTimeTicks,LocationType,MediaStreams,Width,Height,MediaSources`,
           { headers: this.getHeaders(), cache: 'no-store' }
         );

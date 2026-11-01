@@ -22,7 +22,7 @@ async function handleGET(request: NextRequest) {
     const cookieProfileId = request.cookies.get('homeflix_profile_id')?.value;
     const includeAvailable = request.nextUrl.searchParams.get('includeAvailable') === 'true';
 
-    const netCheck = isRequestLocalOrTailscale(request);
+    const netCheck = await isRequestLocalOrTailscale(request);
     const sessionCookie = request.cookies.get('homeflix_session')?.value;
     const sessionUser = await readSession(sessionCookie, 'web');
 
@@ -108,7 +108,7 @@ async function handleGET(request: NextRequest) {
 
 async function handlePOST(request: NextRequest) {
   try {
-    const netCheck = isRequestLocalOrTailscale(request);
+    const netCheck = await isRequestLocalOrTailscale(request);
     if (!netCheck.isLocalOrTailscale) {
       return NextResponse.json(
         { error: 'Profile switching and management is disabled for external sessions' },

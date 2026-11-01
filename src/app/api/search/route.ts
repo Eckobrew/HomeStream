@@ -1,3 +1,5 @@
+import { JellyfinClient } from '@/lib/jellyfin';
+import { withJellyfinSession } from '@/lib/jellyfin-session';
 import { withParentalControls } from '@/lib/parental-controls';
 import { NextRequest, NextResponse } from 'next/server';
 import { SeerrClient } from '@/lib/seerr';
@@ -17,8 +19,15 @@ async function handleGET(request: NextRequest) {
 
   const seerr = new SeerrClient();
   const qb = new QBittorrentClient();
+  const jellyfin = new JellyfinClient();
+  const localSearch = jellyfin.searchMedia(query);
+  const deduplicate = (items: MediaItem[]) => {
+    const seen = new Set<string>();
+    return items.filter(item => { const key = `${item.type}:${item.tmdbId || `${item.title.toLowerCase().trim()}|${item.year || ''}`}`; if (seen.has(key)) return false; seen.add(key); return true; });
+  };
 
   if (!seerr.isConfigured()) {
+    if (jellyfin.isConfigured()) return NextResponse.json({ results: await localSearch, isDemoMode: false });
     // Search mock database
     const allMock: MediaItem[] = [
       ...MOCK_SEERR_SEARCH_RESULTS,
@@ -45,7 +54,8 @@ async function handleGET(request: NextRequest) {
   }
 
   try {
-    const results = await seerr.search(query);
+    const [library, discovery] = await Promise.all([localSearch, seerr.search(query)]);
+    const results = deduplicate([...library, ...discovery]);
 
     // Cross-reference active qBittorrent downloads
     if (qb.isConfigured()) {
@@ -53,6 +63,7 @@ async function handleGET(request: NextRequest) {
         const dlList = await qb.getStreamableDownloads();
         if (dlList.length > 0) {
           results.forEach((item) => {
+            if (item.source === 'jellyfin' || item.jellyfinId) return;
             const matchedDl = dlList.find(
               (d) =>
                 d.name.toLowerCase().includes(item.title.toLowerCase()) ||
@@ -88,4 +99,4 @@ async function handleGET(request: NextRequest) {
   }
 }
 
-export const GET = withParentalControls(handleGET);
+export const GET = withJellyfinSession(withParentalControls(handleGET));

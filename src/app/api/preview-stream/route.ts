@@ -14,7 +14,7 @@ async function handleGET(request: NextRequest) {
   const ticksParam = searchParams.get('ticks');
   const startTimeTicks = ticksParam ? Number(ticksParam) : undefined;
 
-  if (!itemId) {
+  if (!itemId || !/^[a-zA-Z0-9_-]{1,128}$/.test(itemId) || (startTimeTicks !== undefined && (!Number.isSafeInteger(startTimeTicks) || startTimeTicks < 0))) {
     return NextResponse.json({ error: 'itemId is required' }, { status: 400 });
   }
 
@@ -80,7 +80,7 @@ async function handleGET(request: NextRequest) {
       const data = await res.json();
       const mediaSource = data.MediaSources?.[0];
 
-      if (mediaSource) {
+      if (mediaSource && mediaSource.LocationType !== 'Virtual') {
         // 1. Transcoding required (AVI, MKV, non-h264, etc.)
         if (mediaSource.TranscodingUrl) {
           const transcodeUrl = `${jellyfinUrl}${mediaSource.TranscodingUrl}`;

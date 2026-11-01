@@ -17,7 +17,7 @@ function save(value: Controls) {
   fs.writeFileSync(tmp, JSON.stringify(value), { mode: 0o600 }); fs.renameSync(tmp, file());
 }
 export function parentPinConfigured() { return Boolean(load()?.hash); }
-export async function requireParentPin(pin: unknown, initialize = false): Promise<void> {
+async function verifyParentPin(pin: unknown, initialize = false): Promise<void> {
   const state = load();
   if (!state && !initialize) return;
   if (typeof pin !== 'string' || !/^\d{4,8}$/.test(pin)) throw new Error(state ? 'Enter the parent PIN' : 'Set a parent PIN of 4–8 digits');
@@ -33,6 +33,12 @@ export async function requireParentPin(pin: unknown, initialize = false): Promis
   const actual = await scrypt(pin, state.salt, 32) as Buffer;
   if (expected.length !== actual.length || !crypto.timingSafeEqual(expected, actual)) { failedAttempts.push(now); throw new Error('Incorrect parent PIN'); }
   failedAttempts = [];
+}
+let pinChecks: Promise<void> = Promise.resolve();
+export function requireParentPin(pin: unknown, initialize = false): Promise<void> {
+  const check = pinChecks.then(() => verifyParentPin(pin, initialize));
+  pinChecks = check.catch(() => {});
+  return check;
 }
 export function kidsPolicyRevision(profile: UserProfile) {
   return crypto.createHash('sha256').update(`${profile.id}|${profile.jellyfinUserId}|${profile.isKids}|${profile.kidsRating}|${profile.kidsDateOfBirth}`).digest('hex').slice(0, 24);

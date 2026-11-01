@@ -89,6 +89,8 @@ async function handleGET(request: NextRequest) {
   // Direct-path access is for complete files only; growing torrents need a hash
   // so piece availability can be checked.
   if (rawPath) {
+    if (!isVideoFile(rawPath)) return NextResponse.json({ error: 'Only video files can be streamed' }, { status: 400 });
+    if (/\.!qB$/i.test(rawPath)) return NextResponse.json({ error: 'Use the torrent hash to stream incomplete files safely' }, { status: 400 });
     if (searchParams.get('growing') === '1') return NextResponse.json({ error: 'Use the torrent hash to stream an incomplete file safely' }, { status: 400 });
     const candidate = path.resolve(downloadsPath, rawPath);
     const safePath = confinedFile(downloadsPath, candidate);

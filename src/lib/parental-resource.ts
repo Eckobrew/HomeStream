@@ -75,15 +75,15 @@ export async function parentalResource(request: NextRequest): Promise<Response> 
     if (local) { headers['X-Emby-Token'] = config.jellyfinApiKey; headers.Authorization = `MediaBrowser Token="${config.jellyfinApiKey}"`; }
     const range = request.headers.get('range'); if (range && /^bytes=\d*-\d*$/.test(range)) headers.Range = range;
     const response = await fetch(target, { method: request.method === 'HEAD' ? 'HEAD' : 'GET', headers, redirect: 'error', signal: request.signal, cache: 'no-store' });
-    if (!response.ok) return new NextResponse(null, { status: response.status, headers: { 'Cache-Control': 'no-store' } });
     const output = new Headers({ 'Cache-Control': 'no-store', 'Access-Control-Allow-Origin': '*', 'Access-Control-Expose-Headers': 'Content-Range,Accept-Ranges,Content-Length', 'X-Content-Type-Options': 'nosniff' });
     for (const name of ['content-type', 'content-length', 'content-range', 'accept-ranges']) {
       const value = response.headers.get(name); if (value) output.set(name, value);
     }
+    if (!response.ok) { await response.body?.cancel(); return new Response(null, { status: response.status, headers: output }); }
     const type = response.headers.get('content-type') || '';
     if (ticket.kind === 'image' && !type.startsWith('image/')) throw new Error('Invalid artwork');
     if (ticket.kind === 'stream' && (/mpegurl/i.test(type) || target.pathname.endsWith('.m3u8'))) {
-      const text = await response.text(); if (text.length > 2 * 1024 * 1024) throw new Error('Playlist too large');
+      const text = await boundedPlaylist(response);
       const wrap = (value: string) => new URL(resourceUrl(new URL(value, target).toString(), profile, 'stream', ticket.age, ticket.device), request.url).toString();
       const playlist = text.split('\n').map(line => line.startsWith('#') ? line.replace(/URI="([^"]+)"/g, (_, value) => `URI="${wrap(value)}"`) : line.trim() ? wrap(line.trim()) : line).join('\n');
       output.delete('content-length'); output.set('content-type', 'application/vnd.apple.mpegurl');
@@ -91,4 +91,21 @@ export async function parentalResource(request: NextRequest): Promise<Response> 
     }
     return new Response(request.method === 'HEAD' ? null : response.body, { status: response.status, headers: output });
   } catch { return NextResponse.json({ error: 'Media access is not permitted for this profile' }, { status: 403, headers: { 'Cache-Control': 'no-store' } }); }
+}
+
+async function boundedPlaylist(response: Response): Promise<string> {
+  const reader = response.body?.getReader();
+  if (!reader) return '';
+  const chunks: Uint8Array[] = [];
+  let bytes = 0;
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      bytes += value.byteLength;
+      if (bytes > 2 * 1024 * 1024) { await reader.cancel(); throw new Error('Playlist too large'); }
+      chunks.push(value);
+    }
+  } finally { reader.releaseLock(); }
+  return Buffer.concat(chunks).toString('utf8');
 }

@@ -1,7 +1,7 @@
 # Multi-stage Dockerfile for HomeFlix (Next.js Standalone)
 # Optimized for Proxmox LXC Containers and lightweight deployments
 
-FROM node:20-alpine AS base
+FROM node:22-alpine AS base
 
 # Install dependencies only when needed
 FROM base AS deps

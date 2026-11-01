@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
   }
 
   // General auth status check
-  const netCheck = isRequestLocalOrTailscale(request);
+  const netCheck = await isRequestLocalOrTailscale(request);
   const sessionCookie = request.cookies.get(SESSION_COOKIE_NAME)?.value;
 
   const sessionUser = await readSession(sessionCookie, 'web');
@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
       return response;
     }
 
-    if (!allowLogin(request)) return NextResponse.json({ error: 'Too many login attempts. Try again in a minute.' }, { status: 429 });
+    if (!await allowLogin(request)) return NextResponse.json({ error: 'Too many login attempts. Try again in a minute.' }, { status: 429 });
     const { username, password } = body;
     if (typeof username !== 'string' || !username.trim() || (password !== undefined && typeof password !== 'string')) {
       return NextResponse.json(

@@ -17,7 +17,7 @@ export function withJellyfinSession<Args extends unknown[], Result>(handler: (..
     const session = await readSession(token, mobile ? 'mobile' : 'web');
     const credentials = session?.accessToken ? { id: session.id, accessToken: session.accessToken } : null;
     const request = args[0];
-    if (session && request instanceof NextRequest && request.method === 'GET' && !isRequestLocalOrTailscale(request).isLocalOrTailscale) {
+    if (session && request instanceof NextRequest && request.method === 'GET' && !(await isRequestLocalOrTailscale(request)).isLocalOrTailscale) {
       const url = request.nextUrl.clone();
       url.searchParams.set('userId', session.id);
       args[0] = new NextRequest(url, { headers: request.headers, signal: request.signal });

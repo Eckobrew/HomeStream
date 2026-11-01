@@ -8,7 +8,7 @@ import { getHomeflixProfiles } from '@/lib/profiles';
 
 export const dynamic = 'force-dynamic';
 
-async function handleGET() {
+async function handleGET(_request: NextRequest) {
   const config = getServerConfig();
   const profiles = await getHomeflixProfiles();
 

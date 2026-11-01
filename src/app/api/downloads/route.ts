@@ -1,10 +1,10 @@
 import { withParentalControls } from '@/lib/parental-controls';
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { QBittorrentClient } from '@/lib/qbittorrent';
 
 export const dynamic = 'force-dynamic';
 
-async function handleGET() {
+async function handleGET(_request: NextRequest) {
   try {
     const client = new QBittorrentClient();
     if (!client.isConfigured()) {

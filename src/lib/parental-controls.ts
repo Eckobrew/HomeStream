@@ -51,7 +51,7 @@ export async function guardKidsRequest(request: NextRequest, profile: UserProfil
   if (!isKids(profile)) return;
   const name = route(request);
   if (name === 'downloads' || name.startsWith('stream/download')) throw new ParentalDenied('Downloading torrents are unavailable in Kids mode');
-  if (name === 'trailer') return;
+  if (name === 'trailer' || (name === 'request' && request.method === 'GET')) return;
   if (name.startsWith('profiles')) return;
   const sourceId = request.nextUrl.searchParams.get('mediaSourceId');
   if (sourceId && !/^[a-zA-Z0-9_-]{1,128}$/.test(sourceId)) throw new ParentalDenied('Invalid media source');
@@ -87,7 +87,10 @@ export async function filterKidsJson(value: unknown, profile: UserProfile): Prom
         result = (async () => {
           if (item.source === 'demo') return { allowed: false, age: 1000 };
           let rating = typeof item.rating === 'string' ? item.rating : null;
-          if (String(item.id).startsWith('seerr-') || item.source === 'seerr') {
+          const discoveryEpisode = /^seerr-ep-(\d+)-\d+-\d+$/.exec(String(item.id));
+          if (discoveryEpisode) {
+            rating = await catalogCertification(Number(discoveryEpisode[1]), 'tv');
+          } else if (String(item.id).startsWith('seerr-') || item.source === 'seerr') {
             if (++lookups > 48 || Date.now() > deadline) return { allowed: false, age: 1000 };
             const tmdb = Number(item.tmdbId) || Number(/^seerr-(?:movie-|tv-)?(\d+)$/.exec(String(item.id))?.[1]);
             rating = await catalogCertification(tmdb, item.type === 'Movie' ? 'movie' : 'tv');
@@ -159,8 +162,13 @@ export function withParentalControls<Args extends unknown[]>(handler: (...args: 
 }
 export async function parentalResponse(request: NextRequest, response: Response, profile: UserProfile): Promise<Response> {
   if (!isKids(profile) && !(await getHomeflixProfiles()).some(isKids)) return response;
-  if (!response.ok || !response.headers.get('content-type')?.includes('application/json')) return response;
   const name = route(request);
+  const location = response.headers.get('location');
+  if (location && response.status >= 300 && response.status < 400 && name === 'preview-stream') {
+    const age = isKids(profile) ? await permit(request.nextUrl.searchParams.get('itemId') || '', profile) : 1000;
+    return NextResponse.redirect(new URL(resourceUrl(new URL(location, request.url).toString(), profile, 'stream', age), request.url), 307);
+  }
+  if (!response.ok || !response.headers.get('content-type')?.includes('application/json')) return response;
   if (name.startsWith('profiles')) return response;
   if (isKids(profile) && name === 'trailer') return NextResponse.json({ success: true, trailer: null });
   const data = await response.json();

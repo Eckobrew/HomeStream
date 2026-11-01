@@ -32,6 +32,10 @@ export class SeerrClient {
     this.apiKey = apiKey || config.seerrApiKey;
   }
 
+  private fetch(input: string, options: RequestInit & { next?: { revalidate?: number } } = {}) {
+    return fetch(input, { ...options, redirect: 'error', signal: options.signal || AbortSignal.timeout(10000) });
+  }
+
   isConfigured(): boolean {
     return Boolean(this.url && this.apiKey);
   }
@@ -50,7 +54,7 @@ export class SeerrClient {
     }
 
     try {
-      const res = await fetch(`${this.url}/api/v1/status`, {
+      const res = await this.fetch(`${this.url}/api/v1/status`, {
         headers: this.getHeaders(),
         next: { revalidate: 0 },
       });
@@ -128,7 +132,7 @@ export class SeerrClient {
   async search(query: string, page = 1): Promise<MediaItem[]> {
     if (!this.isConfigured() || !query.trim()) return [];
     try {
-      const res = await fetch(
+      const res = await this.fetch(
         `${this.url}/api/v1/search?query=${encodeURIComponent(query)}&page=${page}`,
         { headers: this.getHeaders() }
       );
@@ -147,7 +151,7 @@ export class SeerrClient {
   async getTrending(): Promise<MediaItem[]> {
     if (!this.isConfigured()) return [];
     try {
-      const res = await fetch(`${this.url}/api/v1/discover/trending`, {
+      const res = await this.fetch(`${this.url}/api/v1/discover/trending`, {
         headers: this.getHeaders(),
         next: { revalidate: 300 },
       });
@@ -166,7 +170,7 @@ export class SeerrClient {
   async getPopularMovies(page = 1): Promise<MediaItem[]> {
     if (!this.isConfigured()) return [];
     try {
-      const res = await fetch(`${this.url}/api/v1/discover/movies?page=${page}`, {
+      const res = await this.fetch(`${this.url}/api/v1/discover/movies?page=${page}`, {
         headers: this.getHeaders(),
         next: { revalidate: 300 },
       });
@@ -185,7 +189,7 @@ export class SeerrClient {
   async getPopularTv(page = 1): Promise<MediaItem[]> {
     if (!this.isConfigured()) return [];
     try {
-      const res = await fetch(`${this.url}/api/v1/discover/tv?page=${page}`, {
+      const res = await this.fetch(`${this.url}/api/v1/discover/tv?page=${page}`, {
         headers: this.getHeaders(),
         next: { revalidate: 300 },
       });
@@ -205,7 +209,7 @@ export class SeerrClient {
     if (!this.isConfigured() || !genreId) return [];
     try {
       const endpoint = mediaType === 'tv' ? 'tv' : 'movies';
-      const res = await fetch(`${this.url}/api/v1/discover/${endpoint}?genre=${genreId}&page=${page}`, {
+      const res = await this.fetch(`${this.url}/api/v1/discover/${endpoint}?genre=${genreId}&page=${page}`, {
         headers: this.getHeaders(),
         next: { revalidate: 300 }, signal: AbortSignal.timeout(8000),
       });
@@ -325,7 +329,7 @@ export class SeerrClient {
     if (!this.isConfigured()) return [];
     try {
       const service = mediaType === 'tv' ? 'sonarr' : 'radarr';
-      const srvRes = await fetch(`${this.url}/api/v1/service/${service}`, {
+      const srvRes = await this.fetch(`${this.url}/api/v1/service/${service}`, {
         headers: this.getHeaders(),
         next: { revalidate: 600 },
       });
@@ -334,7 +338,7 @@ export class SeerrClient {
       if (!Array.isArray(servers) || servers.length === 0) return [];
       const defaultServer = servers.find((s) => s.isDefault) || servers[0];
 
-      const profRes = await fetch(`${this.url}/api/v1/service/${service}/${defaultServer.id}`, {
+      const profRes = await this.fetch(`${this.url}/api/v1/service/${service}/${defaultServer.id}`, {
         headers: this.getHeaders(),
         next: { revalidate: 600 },
       });
@@ -356,7 +360,7 @@ export class SeerrClient {
   async getTvDetails(tmdbId: number): Promise<MediaItem | null> {
     if (!this.isConfigured() || !tmdbId) return null;
     try {
-      const res = await fetch(`${this.url}/api/v1/tv/${tmdbId}`, {
+      const res = await this.fetch(`${this.url}/api/v1/tv/${tmdbId}`, {
         headers: this.getHeaders(),
         next: { revalidate: 300 },
       });
@@ -395,11 +399,13 @@ export class SeerrClient {
       }
 
       const regularSeasons = (tvData.seasons || []).filter((s: any) => s.seasonNumber > 0);
-      const seasonsWithEpisodes: Season[] = await Promise.all(
-        regularSeasons.map(async (s: any) => {
+      const seasonDeadline = Date.now() + 15000;
+      const seasonsWithEpisodes: Season[] = await boundedMap(regularSeasons, async (s: any) => {
           let episodes: Episode[] = [];
           try {
-            const sRes = await fetch(`${this.url}/api/v1/tv/${tmdbId}/season/${s.seasonNumber}`, {
+            if (Date.now() >= seasonDeadline) throw new Error('Season lookup budget exceeded');
+            const sRes = await this.fetch(`${this.url}/api/v1/tv/${tmdbId}/season/${s.seasonNumber}`, {
+              signal: AbortSignal.timeout(Math.max(1, Math.min(10000, seasonDeadline - Date.now()))),
               headers: this.getHeaders(),
               next: { revalidate: 300 },
             });
@@ -432,7 +438,7 @@ export class SeerrClient {
             overview: s.overview,
             episodes,
           };
-        })
+        }
       );
 
       mapped.seasons = seasonsWithEpisodes;
@@ -447,7 +453,7 @@ export class SeerrClient {
   async getMovieDetails(tmdbId: number): Promise<MediaItem | null> {
     if (!this.isConfigured() || !tmdbId) return null;
     try {
-      const res = await fetch(`${this.url}/api/v1/movie/${tmdbId}`, {
+      const res = await this.fetch(`${this.url}/api/v1/movie/${tmdbId}`, {
         headers: this.getHeaders(),
         next: { revalidate: 300 },
       });
@@ -493,7 +499,7 @@ export class SeerrClient {
     if (!this.isConfigured() || !tmdbId) return null;
     try {
       const type = mediaType === 'tv' ? 'tv' : 'movie';
-      const res = await fetch(`${this.url}/api/v1/${type}/${tmdbId}`, {
+      const res = await this.fetch(`${this.url}/api/v1/${type}/${tmdbId}`, {
         headers: this.getHeaders(),
         next: { revalidate: 3600 },
       });
@@ -522,7 +528,7 @@ export class SeerrClient {
     if (!this.isConfigured() || !tmdbId) return [];
     try {
       const type = mediaType === 'tv' ? 'tv' : 'movie';
-      const res = await fetch(
+      const res = await this.fetch(
         `${this.url}/api/v1/${type}/${tmdbId}/recommendations?page=${page}`,
         { headers: this.getHeaders(), next: { revalidate: 3600 }, signal: AbortSignal.timeout(10000) }
       );
@@ -542,7 +548,7 @@ export class SeerrClient {
   async getMovieCollection(tmdbId: number): Promise<{ name?: string; overview?: string; parts: MediaItem[] } | null> {
     if (!this.isConfigured() || !tmdbId) return null;
     try {
-      const res = await fetch(`${this.url}/api/v1/movie/${tmdbId}`, {
+      const res = await this.fetch(`${this.url}/api/v1/movie/${tmdbId}`, {
         headers: this.getHeaders(),
         next: { revalidate: 3600 },
       });
@@ -551,7 +557,7 @@ export class SeerrClient {
       const colId = movieData.collection?.id;
       if (!colId) return null;
 
-      const colRes = await fetch(`${this.url}/api/v1/collection/${colId}`, {
+      const colRes = await this.fetch(`${this.url}/api/v1/collection/${colId}`, {
         headers: this.getHeaders(),
         next: { revalidate: 3600 },
       });
@@ -574,7 +580,7 @@ export class SeerrClient {
   async getUserRequests(take = 20): Promise<MediaItem[]> {
     if (!this.isConfigured()) return [];
     try {
-      const res = await fetch(`${this.url}/api/v1/request?take=${take}&sort=added`, {
+      const res = await this.fetch(`${this.url}/api/v1/request?take=${take}&sort=added`, {
         headers: this.getHeaders(),
         next: { revalidate: 15 },
       });
@@ -624,7 +630,7 @@ export class SeerrClient {
         body.seasons = payload.seasons && payload.seasons.length > 0 ? payload.seasons : 'all';
       }
 
-      const res = await fetch(`${this.url}/api/v1/request`, {
+      const res = await this.fetch(`${this.url}/api/v1/request`, {
         method: 'POST',
         headers: this.getHeaders(),
         body: JSON.stringify(body),
@@ -642,4 +648,10 @@ export class SeerrClient {
       return { success: false, error: msg };
     }
   }
+}
+
+async function boundedMap<T, R>(items: T[], action: (item: T) => Promise<R>): Promise<R[]> {
+  const result: R[] = [];
+  for (let index = 0; index < items.length; index += 4) result.push(...await Promise.all(items.slice(index, index + 4).map(action)));
+  return result;
 }

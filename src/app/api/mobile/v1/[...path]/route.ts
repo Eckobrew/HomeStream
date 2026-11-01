@@ -74,7 +74,7 @@ async function dispatch(request: NextRequest, context: Context) {
   if (get && route === 'image') return handleImage(request);
   if (get && route === 'auth/users') return NextResponse.json({ users: [] });
   if (!get && route === 'auth/login') {
-    if (!allowLogin(request)) return NextResponse.json({ error: 'Too many login attempts. Try again in a minute.' }, { status: 429 });
+    if (!await allowLogin(request)) return NextResponse.json({ error: 'Too many login attempts. Try again in a minute.' }, { status: 429 });
     if ((process.env.HOMESTREAM_MOBILE_TOKEN || '').length < 32) return NextResponse.json({ error: 'Mobile API disabled' }, { status: 503 });
     const body = await request.json().catch(() => null);
     if (!body || typeof body.username !== 'string' || !body.username.trim() || typeof body.password !== 'string') {
@@ -95,7 +95,7 @@ async function dispatch(request: NextRequest, context: Context) {
   }
   if (!get && route === 'auth/pair') {
     if (!directLocal(request)) return NextResponse.json({ error: 'Automatic pairing requires a direct connection on your home network. Use Jellyfin sign-in remotely.' }, { status: 403 });
-    if (!allowLogin(request)) return NextResponse.json({ error: 'Too many pairing attempts. Try again shortly.' }, { status: 429 });
+    if (!await allowLogin(request)) return NextResponse.json({ error: 'Too many pairing attempts. Try again shortly.' }, { status: 429 });
     const body = await request.json().catch(() => null);
     if (!body || typeof body.deviceId !== 'string' || !body.deviceId || body.deviceId.length > 200) return NextResponse.json({ error: 'Device identity required' }, { status: 400 });
     const externalUrl = process.env.HOMESTREAM_EXTERNAL_URL || '';
@@ -179,7 +179,7 @@ async function dispatchContent(request: NextRequest, context: Context) {
   if (!get && route === 'profiles') {
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== 'object' || Array.isArray(body)) return NextResponse.json({ error: 'Profile details required' }, { status: 400 });
-    if (!allowLogin(request)) return NextResponse.json({ error: 'Too many profile changes. Try again shortly.' }, { status: 429 });
+    if (!await allowLogin(request)) return NextResponse.json({ error: 'Too many profile changes. Try again shortly.' }, { status: 429 });
     try { return NextResponse.json({ success: true, ...await manageProfile(body, session?.id, session?.name) }); }
     catch (error) {
       if (error instanceof Error && error.message === 'Kids profiles must use a non-administrator Jellyfin account') return NextResponse.json({ error: error.message }, { status: 403 });
@@ -205,25 +205,8 @@ async function dispatchContent(request: NextRequest, context: Context) {
     if (!jellyfin.isConfigured()) return NextResponse.json({ error: 'Jellyfin not configured' }, { status: 503 });
     return NextResponse.json({ items: await jellyfin.getEpisodeQueue(itemId) });
   }
-  if (get && route === 'search') {
-    const q = request.nextUrl.searchParams.get('q')?.trim() || '';
-    if (!q) return NextResponse.json({ results: [] });
-    const config = getServerConfig();
-    const libraryResults = await Promise.all(['movies', 'tv'].map(async type => {
-      if (!config.jellyfinUrl || !config.jellyfinApiKey) return [];
-      const url = request.nextUrl.clone(); url.searchParams.set('search', q);
-      const response = await library(new NextRequest(url, { headers: request.headers }), { params: Promise.resolve({ type }) });
-      return (await response.json()).items || [];
-    }));
-    const discovery = config.seerrUrl && config.seerrApiKey ? (await (await search(request)).json()).results || [] : [];
-    const results = [...libraryResults.flat(), ...discovery];
-    const seen = new Set<string>();
-    return NextResponse.json({ results: results.filter(item => {
-      const key = `${item.type}:${item.tmdbId || item.title.toLowerCase().trim()}`;
-      if (seen.has(key)) return false; seen.add(key); return true;
-    }) });
-  }
-  if (get && route === 'downloads') return downloads();
+  if (get && route === 'search') return search(request);
+  if (get && route === 'downloads') return downloads(request);
   if (get && /^categories\/(movies|tv|series|requests)$/.test(route)) return categories(request, { params: Promise.resolve({ type: params.path[1] }) });
   if (get && params.path.length === 3 && params.path[0] === 'media' && params.path[2] === 'collection') {
     const id = params.path[1];
