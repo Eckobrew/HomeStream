@@ -13,7 +13,7 @@ import { GET as details } from '@/app/api/media/[id]/route';
 import { GET as playback } from '@/app/api/playback/route';
 import { POST as progress } from '@/app/api/playback/progress/route';
 import { GET as subtitles } from '@/app/api/subtitles/route';
-import { POST as requestMedia } from '@/app/api/request/route';
+import { GET as requestOptions, POST as requestMedia } from '@/app/api/request/route';
 import { getHomeflixProfiles } from '@/lib/profiles';
 import { GET as search } from '@/app/api/search/route';
 import { GET as downloads } from '@/app/api/downloads/route';
@@ -253,6 +253,7 @@ async function dispatchContent(request: NextRequest, context: Context) {
     }
     return progress(request);
   }
+  if (get && route === 'request') return requestOptions(request);
   if (!get && route === 'request') return requestMedia(request);
   return NextResponse.json({ error: 'Unknown mobile endpoint' }, { status: 404 });
 }

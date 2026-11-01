@@ -1,11 +1,19 @@
+import { timingSafeEqual } from 'crypto';
+import { readSession } from '@/lib/session';
 import { NextRequest, NextResponse } from 'next/server';
 import { QBittorrentClient } from '@/lib/qbittorrent';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
+  const expected = process.env.HOMESTREAM_WEBHOOK_TOKEN || '';
+  const supplied = request.headers.get('authorization')?.replace(/^Bearer /i, '') || '';
+  const validToken = expected.length >= 32 && supplied.length === expected.length && timingSafeEqual(Buffer.from(expected), Buffer.from(supplied));
+  const session = await readSession(request.cookies.get('homeflix_session')?.value, 'web');
+  if (!validToken && !session?.admin) return NextResponse.json({ error: 'Webhook token or administrator session required' }, { status: 403 });
   try {
-    const payload = await request.json().catch(() => ({}));
+    const payload = await request.json().catch(() => null);
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return NextResponse.json({ error: 'Event object required' }, { status: 400 });
     const eventType = payload.eventType || payload.event_type || 'Unknown';
     const downloadId =
       payload.downloadId ||
@@ -13,7 +21,11 @@ export async function POST(request: NextRequest) {
       payload.release?.downloadId ||
       payload.release?.download_id;
 
-    console.log(`[Arr Webhook] Received ${eventType} event. DownloadId: ${downloadId || 'none'}`);
+    if (typeof eventType !== 'string') return NextResponse.json({ error: 'Invalid event type' }, { status: 400 });
+    if (eventType.toLowerCase() === 'test') return NextResponse.json({ success: true, action: 'test' });
+    if (!['grab', 'download', 'import', 'upgrade'].includes(eventType.toLowerCase())) return NextResponse.json({ success: true, action: 'ignored' });
+    if (downloadId !== undefined && (typeof downloadId !== 'string' || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(downloadId))) return NextResponse.json({ error: 'Invalid torrent hash' }, { status: 400 });
+    console.info('[Arr Webhook] Accepted media event');
 
     const client = new QBittorrentClient();
     if (!client.isConfigured()) {
