@@ -48,7 +48,11 @@ async function handleGET(request: NextRequest) {
       startTimeTicks,
     });
     if (!result.streamUrl) return NextResponse.json({ error: result.error || 'Media file is not available' }, { status: 404 });
-    return NextResponse.json(result);
+    const path = new URL(result.streamUrl).pathname.toLowerCase();
+    const transport = path.endsWith('.m3u8') ? 'HLS' : 'file';
+    const contentType = transport === 'HLS' ? 'application/x-mpegURL' : path.endsWith('.webm') ? 'video/webm' : 'video/mp4';
+    // Preserve delivery metadata before parental tickets hide the URL extension.
+    return NextResponse.json({ ...result, transport, contentType });
   } catch (error) {
     console.error('Failed to get playback stream:', error);
     return NextResponse.json(

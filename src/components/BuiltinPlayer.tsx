@@ -74,6 +74,7 @@ export const BuiltinPlayer: React.FC<BuiltinPlayerProps> = ({
   const [isMidStreamBuffering, setIsMidStreamBuffering] = useState(false);
   const [isLoadingEpisode, setIsLoadingEpisode] = useState(false);
   const [streamUrl, setStreamUrl] = useState<string>('');
+  const [streamDelivery, setStreamDelivery] = useState<{ url: string; type: string } | null>(null);
   const [isTranscoding, setIsTranscoding] = useState(false);
   const [isLoadingStream, setIsLoadingStream] = useState(true);
 
@@ -171,7 +172,7 @@ export const BuiltinPlayer: React.FC<BuiltinPlayerProps> = ({
   const streamUrlRef = useRef(streamUrl);
   useEffect(() => {
     streamUrlRef.current = streamUrl;
-  }, [streamUrl]);
+  }, [streamUrl, streamDelivery]);
 
   const lastCastedUrlRef = useRef<string>('');
   const lastCastedKeyRef = useRef<string>('');
@@ -386,6 +387,8 @@ export const BuiltinPlayer: React.FC<BuiltinPlayerProps> = ({
 
       const localUrl = streamUrlRef.current || videoRef.current?.currentSrc || videoRef.current?.src;
       let rawUrl = localUrl;
+      let negotiatedContentType = '';
+      let negotiatedDuration = 0;
       const targetId = activePlayableId || activeEpisode?.jellyfinId || item.playableEpisodeId || item.jellyfinId || item.id;
       if (!isItemDownloading && targetId) {
         const params = new URLSearchParams({ itemId: targetId, receiver: 'cast', videoCodecs: compatible ? 'h264' : 'h264,hevc,vp8,vp9,av1', audioCodecs: 'aac,mp3,opus,vorbis', maxWidth: compatible ? '1920' : '3840', maxHeight: compatible ? '1080' : '2160', forceTranscode: String(compatible) });
@@ -393,6 +396,8 @@ export const BuiltinPlayer: React.FC<BuiltinPlayerProps> = ({
         if (!response.ok) throw new Error('Cast stream negotiation failed');
         const result = await response.json();
         rawUrl = result.streamUrl;
+        negotiatedContentType = result.contentType || '';
+        negotiatedDuration = result.durationSeconds || 0;
       }
       if (generation !== castLoadGeneration.current) return;
       if (!rawUrl) return;
@@ -402,7 +407,7 @@ export const BuiltinPlayer: React.FC<BuiltinPlayerProps> = ({
       lastCastedKeyRef.current = (activeEpisode ? `${item.id}-${activeEpisode.id}` : item.id) + '-' + localUrl;
 
       const isHls = absoluteMediaUrl.includes('.m3u8');
-      const contentType = isHls ? 'application/x-mpegURL' : new URL(absoluteMediaUrl).pathname.endsWith('.webm') ? 'video/webm' : 'video/mp4';
+      const contentType = negotiatedContentType || (isHls ? 'application/x-mpegURL' : new URL(absoluteMediaUrl).pathname.endsWith('.webm') ? 'video/webm' : 'video/mp4');
 
       const mediaInfo = new (window as any).chrome.cast.media.MediaInfo(absoluteMediaUrl, contentType);
       mediaInfo.metadata = new (window as any).chrome.cast.media.GenericMediaMetadata();
@@ -415,6 +420,10 @@ export const BuiltinPlayer: React.FC<BuiltinPlayerProps> = ({
       }
 
       mediaInfo.streamType = (window as any).chrome.cast.media.StreamType.BUFFERED;
+      if (negotiatedDuration > 0) {
+        mediaInfo.duration = negotiatedDuration;
+        mediaInfo.customData = { playback: { durationSeconds: negotiatedDuration } };
+      }
 
       if (subtitles && subtitles.length > 0 && (window as any).chrome?.cast?.media?.Track) {
         mediaInfo.tracks = subtitles.map((sub, idx) => {
@@ -810,7 +819,8 @@ export const BuiltinPlayer: React.FC<BuiltinPlayerProps> = ({
       .then((data) => {
         if (!isMounted) return;
         if (data.streamUrl) {
-          setStreamUrl(data.streamUrl);
+          setStreamDelivery({ url: data.streamUrl, type: data.contentType || '' });
+            setStreamUrl(data.streamUrl);
           setIsTranscoding(Boolean(data.isTranscoding));
           if (data.durationSeconds && data.durationSeconds > 0) {
             setPlaybackDuration(data.durationSeconds);
@@ -854,6 +864,7 @@ export const BuiltinPlayer: React.FC<BuiltinPlayerProps> = ({
         .then((res) => res.json())
         .then((data) => {
           if (data.streamUrl) {
+            setStreamDelivery({ url: data.streamUrl, type: data.contentType || '' });
             setStreamUrl(data.streamUrl);
             setIsTranscoding(true);
             setStreamError(false);
@@ -895,6 +906,7 @@ export const BuiltinPlayer: React.FC<BuiltinPlayerProps> = ({
         .then((res) => res.json())
         .then((data) => {
           if (data.streamUrl) {
+            setStreamDelivery({ url: data.streamUrl, type: data.contentType || '' });
             setStreamUrl(data.streamUrl);
             setIsTranscoding(true);
             if (data.durationSeconds && data.durationSeconds > 0) {
@@ -956,7 +968,7 @@ export const BuiltinPlayer: React.FC<BuiltinPlayerProps> = ({
       resumeSeconds = Math.floor(item.playbackPositionTicks / 10000000);
     }
 
-    const isHls = streamUrl.includes('.m3u8');
+    const isHls = (streamDelivery?.url === streamUrl && /mpegurl/i.test(streamDelivery.type)) || streamUrl.includes('.m3u8');
 
     if (isHls && Hls.isSupported()) {
       const hls = new Hls({
@@ -1029,7 +1041,7 @@ export const BuiltinPlayer: React.FC<BuiltinPlayerProps> = ({
         hlsRef.current = null;
       }
     };
-  }, [streamUrl]);
+  }, [streamUrl, streamDelivery]);
 
   // Video event handlers
   const updateBufferState = () => {
