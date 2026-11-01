@@ -566,6 +566,26 @@ export class JellyfinClient {
     return { streamUrl: '', isTranscoding: false, error: 'Jellyfin did not provide a compatible playback stream' };
   }
 
+  /** API-key sessions have no Jellyfin user: UserId in a session report is ignored.
+   * Persist only playback fields through the explicit user-data endpoint instead. */
+  private async saveHouseholdProgress(itemId: string, positionTicks: number): Promise<boolean> {
+    if (requestJellyfinSession()) return true;
+    const uid = await this.getFirstUserId();
+    const response = await this.fetch(`${this.url}/Users/${encodeURIComponent(uid)}/Items/${encodeURIComponent(itemId)}?Fields=RunTimeTicks`, {
+      headers: this.getHeaders(), cache: 'no-store',
+    });
+    if (!response.ok) return false;
+    const item = await response.json();
+    const duration = Number(item.RunTimeTicks) || 0;
+    const complete = duration > 0 && positionTicks >= duration * 0.9;
+    const saved = await this.fetch(`${this.url}/UserItems/${encodeURIComponent(itemId)}/UserData?userId=${encodeURIComponent(uid)}`, {
+      method: 'POST', headers: { ...this.getHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ PlaybackPositionTicks: complete ? 0 : positionTicks,
+        ...(complete ? { Played: true } : {}), LastPlayedDate: new Date().toISOString() }),
+    });
+    return saved.ok;
+  }
+
   async reportPlaybackStarted(itemId: string, positionTicks: number, isPaused = false): Promise<boolean> {
     if (!this.isConfigured() || !itemId) return false;
     const uid = await this.getFirstUserId();
@@ -573,7 +593,7 @@ export class JellyfinClient {
       method: 'POST', headers: { ...this.getHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify({ ItemId: itemId, UserId: uid, PositionTicks: positionTicks, IsPaused: isPaused, CanSeek: true }),
     });
-    return response.ok;
+    return response.ok && await this.saveHouseholdProgress(itemId, positionTicks);
   }
 
   async reportPlaybackProgress(itemId: string, positionTicks: number, isPaused = false): Promise<boolean> {
@@ -593,7 +613,7 @@ export class JellyfinClient {
           IsPaused: isPaused,
         }),
       });
-      return response.ok;
+      return response.ok && await this.saveHouseholdProgress(itemId, positionTicks);
     } catch {
       return false;
     }
@@ -615,7 +635,7 @@ export class JellyfinClient {
           PositionTicks: positionTicks,
         }),
       });
-      return response.ok;
+      return response.ok && await this.saveHouseholdProgress(itemId, positionTicks);
     } catch {
       return false;
     }

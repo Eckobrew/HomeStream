@@ -6,6 +6,16 @@
   if (!window.cast?.framework) { notice.hidden = false; notice.textContent = 'Connect using a Google Cast device to start HomeStream.'; return; }
   const context = cast.framework.CastReceiverContext.getInstance();
   const manager = context.getPlayerManager();
+  // Transcoding output may expose a growing buffered duration. The library
+  // runtime is the full title duration, independent of how much is encoded.
+  manager.setMessageInterceptor(cast.framework.messages.MessageType.MEDIA_STATUS, message => {
+    for (const status of message.status || []) {
+      const media = status.media;
+      const duration = Number(media?.customData?.playback?.durationSeconds);
+      if (media && Number.isFinite(duration) && duration > 0) media.duration = duration;
+    }
+    return message;
+  });
   const images = [document.getElementById('slide-a'), document.getElementById('slide-b')];
   let slides = [], signature = '', index = 0, active = 0, serial = 0, timer = null, shownIdle = null;
   const idle = () => manager.getPlayerState() === cast.framework.messages.PlayerState.IDLE;
