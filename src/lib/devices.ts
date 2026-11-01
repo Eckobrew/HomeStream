@@ -108,3 +108,11 @@ export function isValidDeviceToken(token: string): boolean {
   }
   return false;
 }
+
+/** Household profiles belong only to devices provisioned by direct local pairing. */
+export function isLocallyPairedDeviceToken(token: string): boolean {
+  if (!/^hst_dev_[a-f0-9]{48}$/.test(token)) return false;
+  const devices = loadDevices();
+  const device = Object.prototype.hasOwnProperty.call(devices, token) ? devices[token] : undefined;
+  return Boolean(device && device.token === token && device.pairedLocally === true && device.client !== 'android-jellyfin');
+}

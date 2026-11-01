@@ -87,11 +87,12 @@ try {
   await api('capabilities', 401, undefined, 'wrong-token');
   await api('capabilities', 401, undefined, '');
   assert.equal((await api('capabilities')).apiVersion, 1);
-  assert.ok(Array.isArray((await api('profiles')).profiles));
+  await api('profiles', 403);
   await api('home', 401, undefined, '__proto__');
   const legacyDeviceToken = 'hst_dev_' + 'a'.repeat(48);
   await writeFile(join(dir, 'devices.json'), JSON.stringify({ [legacyDeviceToken]: { token: legacyDeviceToken, deviceId: 'legacy', deviceName: 'Legacy Android', client: 'android', pairedAt: new Date().toISOString(), lastSeen: new Date().toISOString(), pairedLocally: true } }));
   assert.ok(Array.isArray((await api('home', 200, undefined, legacyDeviceToken)).sections));
+  assert.ok(Array.isArray((await api('profiles', 200, undefined, legacyDeviceToken)).profiles));
   const image = await fetch(`${origin}/api/mobile/v1/image?itemId=../../config`);
   assert.equal(image.status, 200);
   assert.equal(image.headers.get('content-type'), 'image/png');
@@ -178,9 +179,7 @@ try {
   assert.ok(login.token.includes('.'));
   assert.ok(!login.token.includes('upstream-secret'));
   await api('auth/pair', 403, { deviceId: 'cannot-escalate' }, login.token);
-  const scopedProfiles = await api('profiles', 200, undefined, login.token);
-  assert.deepEqual(scopedProfiles.profiles, [{ id: 'login-user', name: 'Viewer', jellyfinUserId: 'login-user' }]);
-  assert.equal(scopedProfiles.canManage, false);
+  await api('profiles', 403, undefined, login.token);
   await api('profiles/users', 403, undefined, login.token);
   await api('progress', 200, { itemId: 'episode', userId: 'another-user', positionTicks: 100 }, login.token);
   assert.equal(jellyfinCalls.at(-1).body.UserId, 'login-user');

@@ -20,7 +20,7 @@ import { JellyfinClient } from '@/lib/jellyfin';
 import { resolveJellyfinUserId } from '@/lib/profiles';
 import { createSession, readSession } from '@/lib/session';
 import { allowLogin } from '@/lib/login-limit';
-import { isValidDeviceToken, registerDevice } from '@/lib/devices';
+import { isValidDeviceToken, isLocallyPairedDeviceToken, registerDevice } from '@/lib/devices';
 import { handleImage } from '@/lib/image-proxy';
 import { isLocalOrTailscaleIp } from '@/lib/network';
 import { SeerrClient } from '@/lib/seerr';
@@ -124,6 +124,10 @@ async function dispatch(request: NextRequest, context: Context) {
     const jellyfin = new JellyfinClient(undefined, undefined, uid);
     try { return NextResponse.json({ items: await jellyfin.getResumeItems(true) }); }
     catch { return NextResponse.json({ error: 'Resume history temporarily unavailable' }, { status: 503 }); }
+  }
+  if ((route === 'profiles' || route.startsWith('profiles/')) &&
+      (session || !isLocallyPairedDeviceToken(request.headers.get('authorization')?.replace(/^Bearer /i, '') || ''))) {
+    return NextResponse.json({ error: 'Profiles are available only on locally paired household devices' }, { status: 403 });
   }
   if (get && route === 'profiles') {
     const all = await getHomeflixProfiles();
