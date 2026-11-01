@@ -9,9 +9,12 @@ export function publicOrigin(request: Request): string {
 
 export function validRequestOrigin(request: Request): boolean {
   const origin = request.headers.get('origin');
-  return !origin || origin === new URL(request.url).origin || origin === publicOrigin(request);
+  const configured = publicOrigin(request);
+  const secureUpgrade = configured.replace(/^http:/, 'https:');
+  return !origin || origin === new URL(request.url).origin || origin === configured || origin === secureUpgrade;
 }
 
 export function secureSessionCookie(request: Request): boolean {
-  return publicOrigin(request).startsWith('https:');
+  const origin = request.headers.get('origin');
+  return (origin && validRequestOrigin(request) ? origin : publicOrigin(request)).startsWith('https:');
 }
