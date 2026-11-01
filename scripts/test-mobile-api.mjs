@@ -308,6 +308,14 @@ try {
     const updated = await api('profiles', 200, { action: 'update', profileId: added.profile.id, name: 'Child', avatarId: 'fox', isKids: true, kidsDateOfBirth: birthDate, parentPin: '2468' }, legacyDeviceToken);
     assert.equal(updated.profile.kidsRating, rating, `birthday age ${age}`);
   }
+  await api('profiles/select', 200, { profileId: added.profile.id }, legacyDeviceToken);
+  const pinFile = join(dir, 'parental-controls.json');
+  const pinBackup = await (await import('node:fs/promises')).readFile(pinFile);
+  await rm(pinFile);
+  try {
+    await api('profiles/select', 403, { profileId: 'household-profile', parentPin: '2468' }, legacyDeviceToken);
+    await api('profiles', 403, { action: 'update', profileId: added.profile.id, name: 'Child', avatarId: 'fox', isKids: true, kidsDateOfBirth: dob, parentPin: '1357' }, legacyDeviceToken);
+  } finally { await writeFile(pinFile, pinBackup); }
   console.log('Integration checks passed: authentication, protected APIs, scoped upstream credentials, episode order, watched state, playback, history, byte ranges and path confinement.');
 } catch (error) {
   console.error(output.slice(-6000)); throw error;

@@ -6,6 +6,7 @@ Scope: all API routes and the Jellyfin/Seerr/qBittorrent clients, identity/profi
 
 | Severity | Finding | Resolution |
 | --- | --- | --- |
+| High | Missing PIN storage or an unwritable configured data directory could silently remove the Kids enforcement context. | Fail closed when Kids exist without PIN storage or configured persistent storage cannot be used; corrupt device registries are not overwritten as empty. |
 | High | Restricted preview playback could return a redirect containing the household Jellyfin API key, bypassing the JSON stream wrapper. | Preview redirects now use encrypted profile-scoped stream capabilities; CI checks the redirect does not expose `api_key`. |
 | High | Concurrent PIN requests could race first-PIN initialization and the failed-attempt limit. | PIN checks/initialization are serialized; subsequent initialization attempts verify the already-created PIN. |
 | High | Torrent webhook mutations inherited broad route-level LAN/authenticated-user access, including non-admin users. | Require dedicated webhook bearer token or signed administrator session; reject malformed event bodies/hash values; Test and unrelated events do not mutate torrents. |

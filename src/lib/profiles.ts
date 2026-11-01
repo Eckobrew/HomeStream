@@ -19,6 +19,7 @@ export function getProfilesFilePath(): string {
     fs.accessSync(targetDir, fs.constants.W_OK);
     return path.join(targetDir, 'profiles.json');
   } catch {
+    if (custom) throw new Error('Profile storage is unavailable; refusing temporary fallback');
     const fallbackDir = path.join('/tmp', 'homeflix-data');
     if (!fs.existsSync(fallbackDir)) {
       fs.mkdirSync(fallbackDir, { recursive: true });

@@ -79,7 +79,7 @@ export async function parentalResource(request: NextRequest): Promise<Response> 
     for (const name of ['content-type', 'content-length', 'content-range', 'accept-ranges']) {
       const value = response.headers.get(name); if (value) output.set(name, value);
     }
-    if (!response.ok) { await response.body?.cancel(); return new Response(null, { status: response.status, headers: output }); }
+    if (!response.ok) { await response.body?.cancel(); output.delete('content-length'); return new Response(null, { status: response.status, headers: output }); }
     const type = response.headers.get('content-type') || '';
     if (ticket.kind === 'image' && !type.startsWith('image/')) throw new Error('Invalid artwork');
     if (ticket.kind === 'stream' && (/mpegurl/i.test(type) || target.pathname.endsWith('.m3u8'))) {

@@ -19,6 +19,7 @@ function save(value: Controls) {
 export function parentPinConfigured() { return Boolean(load()?.hash); }
 async function verifyParentPin(pin: unknown, initialize = false): Promise<void> {
   const state = load();
+  if (!state && (await getHomeflixProfiles()).some(isKids)) throw new Error('Parent PIN storage unavailable; ask the server administrator to restore it');
   if (!state && !initialize) return;
   if (typeof pin !== 'string' || !/^\d{4,8}$/.test(pin)) throw new Error(state ? 'Enter the parent PIN' : 'Set a parent PIN of 4–8 digits');
   const now = Date.now(); failedAttempts = failedAttempts.filter(time => now - time < 15 * 60 * 1000);
