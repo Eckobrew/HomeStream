@@ -43,7 +43,7 @@ async function handlePOST(request: NextRequest) {
   try {
     const payload: RequestMediaPayload = await request.json().catch(() => null);
 
-    if (!payload || !Number.isSafeInteger(payload.mediaId) || payload.mediaId <= 0 || !['movie', 'tv'].includes(payload.mediaType) || (payload.seasons !== undefined && payload.seasons !== 'all' && (!Array.isArray(payload.seasons) || payload.seasons.some(season => !Number.isSafeInteger(season) || season < 0)))) {
+    if (!payload || (payload.is4k !== undefined && typeof payload.is4k !== 'boolean') || [payload.profileId, payload.serverId].some(id => id !== undefined && (!Number.isSafeInteger(id) || id < 0)) || !Number.isSafeInteger(payload.mediaId) || payload.mediaId <= 0 || !['movie', 'tv'].includes(payload.mediaType) || (payload.seasons !== undefined && payload.seasons !== 'all' && (!Array.isArray(payload.seasons) || payload.seasons.some(season => !Number.isSafeInteger(season) || season < 0)))) {
       return NextResponse.json(
         { success: false, error: 'mediaId and mediaType are required' },
         { status: 400 }

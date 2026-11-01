@@ -785,7 +785,7 @@ export class JellyfinClient {
       year: item.ProductionYear || (item.PremiereDate ? new Date(item.PremiereDate).getFullYear() : undefined),
       releaseDate: item.PremiereDate,
       rating: item.OfficialRating || undefined,
-      matchPercentage: item.CommunityRating ? Math.round(item.CommunityRating * 10 + 5) : 95,
+      matchPercentage: item.CommunityRating ? Math.min(100, Math.max(0, Math.round(item.CommunityRating * 10 + 5))) : 95,
       communityRating: item.CommunityRating,
       durationMinutes,
       genres: item.Genres || [],
