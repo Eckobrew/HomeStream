@@ -34,6 +34,8 @@ const jellyfin = createServer(async (request, response) => {
   } else if (/^\/Users\/kid-user\/Items\/(allowed|adult|unrated)$/.test(parsedUrl.pathname)) {
     const id = parsedUrl.pathname.split('/').at(-1);
     response.end(JSON.stringify({ Id: id, Name: id, Type: 'Movie', OfficialRating: id === 'allowed' ? 'U' : id === 'adult' ? '18' : undefined, UserData: {} }));
+  } else if (parsedUrl.pathname === '/UserItems/Resume' && parsedUrl.searchParams.get('userId') === 'kid-user') {
+    response.end(JSON.stringify({ Items: ['allowed', 'adult', 'unrated'].map(Id => ({ Id, Name: Id, Type: 'Movie', OfficialRating: Id === 'allowed' ? 'U' : Id === 'adult' ? '18' : undefined, UserData: { PlaybackPositionTicks: 100000000 }, RunTimeTicks: 9000000000 })) }));
   } else if (parsedUrl.pathname === '/Items/allowed/PlaybackInfo') {
     response.end(JSON.stringify({ PlaySessionId: 'kid-session', MediaSources: [{ Id: 'allowed-source', Container: 'mp4', SupportsDirectPlay: true }] }));
   } else if (parsedUrl.pathname === '/Videos/allowed/stream.mp4') {
@@ -251,6 +253,8 @@ try {
   await api('request', 403, { mediaType: 'movie', mediaId: 1 }, legacyDeviceToken);
   await api('profiles/users', 403, {}, legacyDeviceToken);
   await api('profiles/select', 403, { profileId: 'household-profile', parentPin: '0000' }, legacyDeviceToken);
+  const resume = await api('continue-watching?userId=linked-jellyfin-user', 200, undefined, legacyDeviceToken);
+  assert.deepEqual(resume.items.map(item => item.id), ['allowed']);
   const restricted = await api('playback?itemId=allowed&userId=linked-jellyfin-user', 200, undefined, legacyDeviceToken);
   assert.ok(restricted.streamUrl.includes('/parental-resource?ticket='));
   assert.ok(!restricted.streamUrl.includes('api_key'));
@@ -263,7 +267,7 @@ try {
   await api('playback?itemId=allowed', 403); // Unbound household bearer cannot bypass Kids mode.
   await api('profiles/select', 200, { profileId: 'household-profile', parentPin: '2468' }, legacyDeviceToken);
   assert.equal((await fetch(restricted.streamUrl)).status, 403); // Previous profile ticket revoked.
-  await api('profiles', 500, { action: 'update', profileId: 'household-profile', name: 'Test', avatarId: 'fox', isKids: true, kidsDateOfBirth: dob, parentPin: '2468' }, legacyDeviceToken);
+  await api('profiles', 403, { action: 'update', profileId: 'household-profile', name: 'Test', avatarId: 'fox', isKids: true, kidsDateOfBirth: dob, parentPin: '2468' }, legacyDeviceToken);
   // Birthday recalculation changes Jellyfin policy and policy revision on the next request.
   const stored = JSON.parse(await (await import('node:fs/promises')).readFile(join(dir, 'profiles.json'), 'utf8'));
   stored.find(p => p.id === added.profile.id).kidsRating = 'U';
@@ -271,6 +275,12 @@ try {
   const adjusted = await api('profiles', 200, undefined, legacyDeviceToken);
   assert.equal(adjusted.profiles.find(p => p.id === added.profile.id).kidsRating, 'PG');
   assert.equal(childPolicy.MaxParentalRating, 1);
+  for (const [age, rating] of [[3, 'U'], [4, 'PG'], [11, 'PG'], [12, '12'], [14, '12'], [15, '15'], [17, '15'], [18, '18']]) {
+    const now = new Date();
+    const birthDate = `${now.getUTCFullYear() - age}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(now.getUTCDate()).padStart(2, '0')}`;
+    const updated = await api('profiles', 200, { action: 'update', profileId: added.profile.id, name: 'Child', avatarId: 'fox', isKids: true, kidsDateOfBirth: birthDate, parentPin: '2468' }, legacyDeviceToken);
+    assert.equal(updated.profile.kidsRating, rating, `birthday age ${age}`);
+  }
   console.log('Integration checks passed: authentication, protected APIs, scoped upstream credentials, episode order, watched state, playback, history, byte ranges and path confinement.');
 } catch (error) {
   console.error(output.slice(-6000)); throw error;

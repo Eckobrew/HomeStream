@@ -49,11 +49,12 @@ export function manageProfile(body: Record<string, unknown>, ownUserId?: string,
         profile.jellyfinUserId = user.id;
         profile.isAdministrator = Boolean(user.isAdministrator);
       }
+      if (requestedKids && profile.isAdministrator) throw new ProfileError('Kids profiles must use a non-administrator Jellyfin account', 403);
       if (requestedKids) await new JellyfinClient().applyKidsPolicy(profile.jellyfinUserId || profile.id, requestedRating as KidsRating);
       else if (wasKids) await new JellyfinClient().applyKidsPolicy(oldUserId, null);
       if (wasKids && requestedKids && oldUserId !== profile.jellyfinUserId) await new JellyfinClient().applyKidsPolicy(oldUserId, null);
       profile.kidsDateOfBirth = requestedKids ? String(body.kidsDateOfBirth) : undefined;
-      profile.isKids = requestedKids; profile.kidsRating = requestedKids ? requestedRating as KidsRating : undefined;
+    profile.isKids = requestedKids; profile.kidsRating = requestedKids ? requestedRating as KidsRating : undefined;
       await saveHomeflixProfiles(profiles);
       return { profile };
     }
@@ -89,9 +90,10 @@ export function manageProfile(body: Record<string, unknown>, ownUserId?: string,
       id: `hf-${crypto.randomUUID()}`, name, avatarId, avatarUrl: `/profile-avatars/${avatarId}.png`,
       ...palette, initials: getInitials(name), jellyfinUserId: user.id, isAdministrator: Boolean(user.isAdministrator),
     };
+    if (requestedKids && user.isAdministrator) throw new ProfileError('Kids profiles must use a non-administrator Jellyfin account', 403);
     if (requestedKids) await jellyfin.applyKidsPolicy(user.id, requestedRating as KidsRating);
     profile.kidsDateOfBirth = requestedKids ? String(body.kidsDateOfBirth) : undefined;
-      profile.isKids = requestedKids; profile.kidsRating = requestedKids ? requestedRating as KidsRating : undefined;
+    profile.isKids = requestedKids; profile.kidsRating = requestedKids ? requestedRating as KidsRating : undefined;
     await saveHomeflixProfiles([...profiles, profile]);
     return { profile, passwordMode };
   });

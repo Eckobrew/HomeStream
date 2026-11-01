@@ -8,19 +8,28 @@ import { kidsPolicyRevision, isKids, KIDS_LIMITS } from './parental-store';
 import { UserProfile } from '@/types';
 
 type Ticket = { url: string; profile: string; user: string; revision: string; expires: number; kind: 'image' | 'stream'; age: number; device?: string };
+const artworkTickets = new Map<string, { url: string; expires: number }>();
 function key() {
   const secret = process.env.HOMESTREAM_SESSION_SECRET || '';
   if (secret.length < 32) throw new Error('Parental streaming secret unavailable');
   return crypto.createHash('sha256').update(secret).digest();
 }
 export function resourceUrl(url: string, profile: UserProfile, kind: Ticket['kind'], age: number, device = requestParentalDevice()): string {
+  const cacheKey = JSON.stringify([url, profile.id, kidsPolicyRevision(profile), device, kind, age]);
+  const cached = kind === 'image' ? artworkTickets.get(cacheKey) : undefined;
+  if (cached && cached.expires > Date.now()) return cached.url;
   const iv = crypto.randomBytes(12);
   const encoder = crypto.createCipheriv('aes-256-gcm', key(), iv);
   const body: Ticket = { url, profile: profile.id, user: profile.jellyfinUserId || profile.id,
     revision: kidsPolicyRevision(profile), expires: Date.now() + 6 * 3600000, kind, age, device: device || undefined };
   const encrypted = Buffer.concat([encoder.update(JSON.stringify(body)), encoder.final()]);
   const token = Buffer.concat([iv, encoder.getAuthTag(), encrypted]).toString('base64url');
-  return `/api/mobile/v1/parental-resource?ticket=${encodeURIComponent(token)}`;
+  const result = `/api/mobile/v1/parental-resource?ticket=${encodeURIComponent(token)}`;
+  if (kind === 'image') {
+    artworkTickets.delete(cacheKey); artworkTickets.set(cacheKey, { url: result, expires: Date.now() + 5 * 3600000 });
+    while (artworkTickets.size > 3000) artworkTickets.delete(artworkTickets.keys().next().value!);
+  }
+  return result;
 }
 export function imageResource(source: string, profile: UserProfile, age: number): string | null {
   const config = getServerConfig();

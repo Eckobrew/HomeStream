@@ -182,6 +182,7 @@ async function dispatchContent(request: NextRequest, context: Context) {
     if (!allowLogin(request)) return NextResponse.json({ error: 'Too many profile changes. Try again shortly.' }, { status: 429 });
     try { return NextResponse.json({ success: true, ...await manageProfile(body, session?.id, session?.name) }); }
     catch (error) {
+      if (error instanceof Error && error.message === 'Kids profiles must use a non-administrator Jellyfin account') return NextResponse.json({ error: error.message }, { status: 403 });
       if (error instanceof ProfileError) return NextResponse.json({ error: error.message }, { status: error.status });
       console.error('Could not save profile');
       return NextResponse.json({ error: 'Could not save profile. Check server storage and Jellyfin configuration.' }, { status: 500 });
@@ -278,9 +279,11 @@ async function handle(request: NextRequest, context: Context) {
   try {
     response = await dispatch(request, context);
   } catch (error) {
-    if (error instanceof ParentalDenied) return NextResponse.json({ error: error.message }, { status: 403 });
-    console.error('Mobile API request failed:', error);
-    response = NextResponse.json({ error: 'Mobile API request failed' }, { status: 500 });
+    if (error instanceof ParentalDenied) response = NextResponse.json({ error: error.message }, { status: 403 });
+    else {
+      console.error('Mobile API request failed:', error);
+      response = NextResponse.json({ error: 'Mobile API request failed' }, { status: 500 });
+    }
   }
   // Never cache profile history or URLs containing Jellyfin stream credentials.
   if ((await context.params).path.join('/') !== 'image') response.headers.set('Cache-Control', 'no-store');

@@ -151,7 +151,7 @@ export function withParentalControls<Args extends unknown[]>(handler: (...args: 
         return profile ? parentalResponse(request, response, profile) : response;
       }, request.headers.get('authorization')?.slice(7));
     } catch (error) {
-      if (error instanceof ParentalDenied) return NextResponse.json({ error: error.message }, { status: 403 });
+      if (error instanceof ParentalDenied) return NextResponse.json({ error: error.message }, { status: 403, headers: { 'Cache-Control': 'no-store' } });
       throw error;
     }
   };
