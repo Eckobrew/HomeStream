@@ -47,8 +47,10 @@ const jellyfin = createServer(async (request, response) => {
     response.setHeader('Content-Type', 'video/mp4'); response.end('safe-movie-bytes');
   } else if (request.url === '/Users/AuthenticateByName') {
     response.end(JSON.stringify({ User: { Id: JSON.parse(text).Username === 'Child' ? 'kid-user' : 'login-user', Name: JSON.parse(text).Username === 'Child' ? 'Child' : 'Viewer', Policy: { IsAdministrator: false } }, AccessToken: 'upstream-secret' }));
-  } else if (/^\/Users\/[^/]+\/Items\/episode$/.test(request.url)) {
-    response.end(JSON.stringify({ Id: 'episode', Name: 'Episode 1', Type: 'Episode', SeriesId: 'test-series', ParentIndexNumber: 1, IndexNumber: 1 }));
+  } else if (/^\/UserItems\/[^/]+\/UserData$/.test(parsedUrl.pathname) && request.method === 'POST') {
+    response.end('{}');
+  } else if (/^\/Users\/[^/]+\/Items\/episode$/.test(parsedUrl.pathname)) {
+    response.end(JSON.stringify({ Id: 'episode', Name: 'Episode 1', Type: 'Episode', RunTimeTicks: 36000000000, UserData: { PlaybackPositionTicks: 1200000000 }, SeriesId: 'test-series', ParentIndexNumber: 1, IndexNumber: 1 }));
   } else if (request.url.startsWith('/Shows/test-series/Episodes')) {
     response.end(JSON.stringify({ Items: [
       { Id: 'next-season', Name: 'Next season', ParentIndexNumber: 2, IndexNumber: 1 },
