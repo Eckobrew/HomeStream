@@ -531,7 +531,7 @@ export class JellyfinClient {
           }
           if (!options?.forceTranscode && mediaSource.SupportsDirectStream && mediaSource.DirectStreamUrl) {
             return {
-              streamUrl: `${this.url}${mediaSource.DirectStreamUrl}`,
+              streamUrl: `${this.url}${mediaSource.TranscodingUrl && /\.m3u8(?:\?|$)/i.test(mediaSource.TranscodingUrl) ? mediaSource.TranscodingUrl : mediaSource.DirectStreamUrl}`,
               isTranscoding: false,
               playMethod: 'DirectStream',
               playSessionId: data.PlaySessionId,
