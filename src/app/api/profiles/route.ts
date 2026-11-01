@@ -1,3 +1,4 @@
+import { withParentalControls } from '@/lib/parental-controls';
 import { withJellyfinSession } from '@/lib/jellyfin-session';
 import { NextRequest, NextResponse } from 'next/server';
 import {
@@ -250,6 +251,6 @@ async function handlePOST(request: NextRequest) {
   }
 }
 
-export const GET = withJellyfinSession(handleGET);
+export const GET = withJellyfinSession(withParentalControls(handleGET));
 
-export const POST = withJellyfinSession(handlePOST);
+export const POST = withJellyfinSession(withParentalControls(handlePOST));

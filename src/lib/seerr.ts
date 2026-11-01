@@ -113,7 +113,7 @@ export class SeerrClient {
       backdropUrl,
       year,
       releaseDate: relDate,
-      rating: isTv ? 'TV-MA' : 'PG-13',
+      rating: undefined,
       matchPercentage: item.voteAverage ? Math.round(item.voteAverage * 10) : 90,
       communityRating: item.voteAverage,
       durationMinutes,

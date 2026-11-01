@@ -1,3 +1,5 @@
+import { denyPasswordlessAdultLogin, isKids } from '@/lib/parental-store';
+import { getHomeflixProfiles } from '@/lib/profiles';
 import { NextRequest, NextResponse } from 'next/server';
 import { isRequestLocalOrTailscale } from '@/lib/network';
 import { getServerConfig } from '@/lib/config';
@@ -38,7 +40,7 @@ export async function GET(request: NextRequest) {
   const sessionUser = await readSession(sessionCookie, 'web');
 
   // If local or over Tailscale -> NO LOGIN REQUIRED!
-  if (netCheck.isLocalOrTailscale) {
+  if (netCheck.isLocalOrTailscale && !(await getHomeflixProfiles()).some(isKids)) {
     return NextResponse.json({
       requiresAuth: false,
       isLocalOrTailscale: true,
@@ -128,6 +130,7 @@ export async function POST(request: NextRequest) {
 
     const authData = await authRes.json();
     const user = authData.User;
+    if (await denyPasswordlessAdultLogin(user.Id, password, user.Name)) return NextResponse.json({ error: 'Adult Jellyfin accounts need a password different from their username when Kids profiles are enabled. Use local pairing and the parent PIN, or set an adult account password.' }, { status: 403 });
     const encodedSession = await createSession({ id: user.Id, name: user.Name, admin: user.Policy?.IsAdministrator === true, accessToken: authData.AccessToken }, 'web');
 
     // Ensure profile exists in profiles.json for this Jellyfin user

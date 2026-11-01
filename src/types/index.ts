@@ -145,6 +145,9 @@ export interface DownloadingTorrentItem {
 }
 
 export interface UserProfile {
+  isKids?: boolean;
+  kidsDateOfBirth?: string;
+  kidsRating?: 'U' | 'PG' | '12' | '15' | '18';
   avatarId?: string;
   id: string;
   name: string;

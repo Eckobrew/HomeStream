@@ -1,10 +1,11 @@
+import { withParentalControls } from '@/lib/parental-controls';
 import { NextRequest, NextResponse } from 'next/server';
 import { SeerrClient } from '@/lib/seerr';
 import { RequestMediaPayload } from '@/types';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(request: NextRequest) {
+async function handleGET(request: NextRequest) {
   const type = (request.nextUrl.searchParams.get('type') || 'movie') as 'movie' | 'tv';
   const seerr = new SeerrClient();
 
@@ -38,7 +39,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function POST(request: NextRequest) {
+async function handlePOST(request: NextRequest) {
   try {
     const payload: RequestMediaPayload = await request.json().catch(() => null);
 
@@ -74,3 +75,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: msg }, { status: 500 });
   }
 }
+
+export const GET = withParentalControls(handleGET);
+export const POST = withParentalControls(handlePOST);

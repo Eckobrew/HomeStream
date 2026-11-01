@@ -1,3 +1,4 @@
+import { withParentalControls } from '@/lib/parental-controls';
 import { NextRequest, NextResponse } from 'next/server';
 import { SeerrClient } from '@/lib/seerr';
 import { QBittorrentClient } from '@/lib/qbittorrent';
@@ -6,7 +7,7 @@ import { MediaItem } from '@/types';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(request: NextRequest) {
+async function handleGET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const query = searchParams.get('q') || '';
 
@@ -86,3 +87,5 @@ export async function GET(request: NextRequest) {
     }, { status: 500 });
   }
 }
+
+export const GET = withParentalControls(handleGET);

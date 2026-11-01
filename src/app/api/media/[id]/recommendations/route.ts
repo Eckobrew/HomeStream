@@ -1,3 +1,4 @@
+import { withParentalControls } from '@/lib/parental-controls';
 import { withJellyfinSession } from '@/lib/jellyfin-session';
 import { NextRequest, NextResponse } from 'next/server';
 import { SeerrClient } from '@/lib/seerr';
@@ -76,4 +77,4 @@ async function handleGET(request: NextRequest, { params }: { params: Promise<{ i
   }).slice(0, 24);
   return NextResponse.json({ success: true, source, recommendations }, { headers: { 'Cache-Control': 'no-store' } });
 }
-export const GET = withJellyfinSession(handleGET);
+export const GET = withJellyfinSession(withParentalControls(handleGET));

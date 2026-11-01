@@ -14,12 +14,31 @@ const origin = `http://127.0.0.1:${port}`;
 let output = '';
 let server;
 const jellyfinCalls = [];
+let childPolicy = { IsAdministrator: false, BlockUnratedItems: [] };
 const jellyfin = createServer(async (request, response) => {
   let text = '';
   for await (const chunk of request) text += chunk;
   jellyfinCalls.push({ path: request.url, token: request.headers['x-emby-token'], body: text ? JSON.parse(text) : null });
   response.setHeader('Content-Type', 'application/json');
-  if (request.url === '/Users/AuthenticateByName') {
+  const parsedUrl = new URL(request.url, 'http://jellyfin.test');
+  if (parsedUrl.pathname === '/Users') {
+    response.end(JSON.stringify([{ Id: 'kid-user', Name: 'Child', Policy: childPolicy }, { Id: 'linked-jellyfin-user', Name: 'Parent', Policy: { IsAdministrator: true } }]));
+  } else if (parsedUrl.pathname === '/Users/kid-user/Policy') {
+    childPolicy = JSON.parse(text); response.end('{}');
+  } else if (parsedUrl.pathname === '/Users/kid-user') {
+    response.end(JSON.stringify({ Id: 'kid-user', Name: 'Child', Policy: childPolicy }));
+  } else if (parsedUrl.pathname === '/Users/linked-jellyfin-user') {
+    response.end(JSON.stringify({ Id: 'linked-jellyfin-user', Name: 'Parent', Policy: { IsAdministrator: true } }));
+  } else if (parsedUrl.pathname === '/Localization/ParentalRatings') {
+    response.end(JSON.stringify(['U', 'PG', '12', '15', '18'].map((Name, Value) => ({ Name: `GB-${Name}`, Value }))));
+  } else if (/^\/Users\/kid-user\/Items\/(allowed|adult|unrated)$/.test(parsedUrl.pathname)) {
+    const id = parsedUrl.pathname.split('/').at(-1);
+    response.end(JSON.stringify({ Id: id, Name: id, Type: 'Movie', OfficialRating: id === 'allowed' ? 'U' : id === 'adult' ? '18' : undefined, UserData: {} }));
+  } else if (parsedUrl.pathname === '/Items/allowed/PlaybackInfo') {
+    response.end(JSON.stringify({ PlaySessionId: 'kid-session', MediaSources: [{ Id: 'allowed-source', Container: 'mp4', SupportsDirectPlay: true }] }));
+  } else if (parsedUrl.pathname === '/Videos/allowed/stream.mp4') {
+    response.setHeader('Content-Type', 'video/mp4'); response.end('safe-movie-bytes');
+  } else if (request.url === '/Users/AuthenticateByName') {
     response.end(JSON.stringify({ User: { Id: 'login-user', Name: 'Viewer', Policy: { IsAdministrator: false } }, AccessToken: 'upstream-secret' }));
   } else if (/^\/Users\/[^/]+\/Items\/episode$/.test(request.url)) {
     response.end(JSON.stringify({ Id: 'episode', Name: 'Episode 1', Type: 'Episode', SeriesId: 'test-series', ParentIndexNumber: 1, IndexNumber: 1 }));
@@ -214,6 +233,44 @@ try {
   await api('stream/download?path=../outside.mp4', 403);
   await api('stream/download?path=escape.mp4', 403);
   await api('stream/download?start=NaN&path=clip.mp4', 400);
+  // Parental controls are exercised through real HTTP endpoints, with an upstream that
+  // deliberately returns adult items even for the child user to verify our own boundary.
+  const dob = `${new Date().getUTCFullYear() - 5}-01-01`;
+  await api('profiles', 400, { action: 'create', mode: 'existing', name: 'Child', avatarId: 'fox', jellyfinUserId: 'kid-user', isKids: true, kidsDateOfBirth: '2999-01-01', parentPin: '2468' }, legacyDeviceToken);
+  const added = await api('profiles', 200, { action: 'create', mode: 'existing', name: 'Child', avatarId: 'fox', jellyfinUserId: 'kid-user', isKids: true, kidsDateOfBirth: dob, parentPin: '2468' }, legacyDeviceToken);
+  assert.equal(added.profile.kidsRating, 'PG');
+  assert.equal(childPolicy.MaxParentalRating, 1);
+  assert.ok(childPolicy.BlockUnratedItems.includes('Movie'));
+  assert.equal(childPolicy.EnableContentDownloading, false);
+  await api('profiles/select', 200, { profileId: added.profile.id }, legacyDeviceToken);
+  await api('media/adult?userId=linked-jellyfin-user', 403, undefined, legacyDeviceToken);
+  await api('media/unrated', 403, undefined, legacyDeviceToken);
+  await api('playback?itemId=adult', 403, undefined, legacyDeviceToken);
+  await api('progress', 403, { itemId: 'adult', userId: 'linked-jellyfin-user', positionTicks: 10 }, legacyDeviceToken);
+  await api('downloads', 403, undefined, legacyDeviceToken);
+  await api('request', 403, { mediaType: 'movie', mediaId: 1 }, legacyDeviceToken);
+  await api('profiles/users', 403, {}, legacyDeviceToken);
+  await api('profiles/select', 403, { profileId: 'household-profile', parentPin: '0000' }, legacyDeviceToken);
+  const restricted = await api('playback?itemId=allowed&userId=linked-jellyfin-user', 200, undefined, legacyDeviceToken);
+  assert.ok(restricted.streamUrl.includes('/parental-resource?ticket='));
+  assert.ok(!restricted.streamUrl.includes('api_key'));
+  const restrictedCall = jellyfinCalls.filter(call => call.path.startsWith('/Items/allowed/PlaybackInfo')).at(-1);
+  assert.ok(restrictedCall.path.includes('UserId=kid-user'));
+  const safeStream = await fetch(restricted.streamUrl);
+  assert.equal(safeStream.status, 200);
+  assert.equal(await safeStream.text(), 'safe-movie-bytes');
+  assert.equal((await fetch(`${origin}/api/mobile/v1/image?itemId=adult`)).status, 403);
+  await api('playback?itemId=allowed', 403); // Unbound household bearer cannot bypass Kids mode.
+  await api('profiles/select', 200, { profileId: 'household-profile', parentPin: '2468' }, legacyDeviceToken);
+  assert.equal((await fetch(restricted.streamUrl)).status, 403); // Previous profile ticket revoked.
+  await api('profiles', 500, { action: 'update', profileId: 'household-profile', name: 'Test', avatarId: 'fox', isKids: true, kidsDateOfBirth: dob, parentPin: '2468' }, legacyDeviceToken);
+  // Birthday recalculation changes Jellyfin policy and policy revision on the next request.
+  const stored = JSON.parse(await (await import('node:fs/promises')).readFile(join(dir, 'profiles.json'), 'utf8'));
+  stored.find(p => p.id === added.profile.id).kidsRating = 'U';
+  await writeFile(join(dir, 'profiles.json'), JSON.stringify(stored));
+  const adjusted = await api('profiles', 200, undefined, legacyDeviceToken);
+  assert.equal(adjusted.profiles.find(p => p.id === added.profile.id).kidsRating, 'PG');
+  assert.equal(childPolicy.MaxParentalRating, 1);
   console.log('Integration checks passed: authentication, protected APIs, scoped upstream credentials, episode order, watched state, playback, history, byte ranges and path confinement.');
 } catch (error) {
   console.error(output.slice(-6000)); throw error;

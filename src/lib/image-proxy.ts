@@ -1,3 +1,6 @@
+import { getHomeflixProfiles } from './profiles';
+import { isKids } from './parental-store';
+import { activeProfile, guardKidsRequest } from './parental-controls';
 import { NextRequest } from 'next/server';
 import { getServerConfig } from './config';
 import { requestJellyfinSession } from './jellyfin-session';
@@ -25,6 +28,16 @@ async function image(url: string, headers: Record<string, string> = {}): Promise
 
 /** Public image-only proxy for native artwork and the default Cast receiver. */
 export async function handleImage(request: NextRequest): Promise<Response> {
+  if ((await getHomeflixProfiles()).some(isKids)) {
+    try {
+      const profile = await activeProfile(request);
+      if (!profile) throw new Error('Profile required');
+      if (isKids(profile)) {
+        if (request.nextUrl.searchParams.has('url') || !request.nextUrl.searchParams.has('itemId')) throw new Error('Use scoped artwork');
+        await guardKidsRequest(request, profile);
+      }
+    } catch { return new Response(null, { status: 403, headers: { 'Cache-Control': 'no-store' } }); }
+  }
   const params = request.nextUrl.searchParams;
   try {
     const raw = params.get('url');

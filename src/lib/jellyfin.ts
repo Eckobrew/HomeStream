@@ -1,3 +1,5 @@
+import { requestParentalProfile } from './parental-runtime';
+import { backupPolicy, backedUpPolicy, KidsRating } from './parental-store';
 import { TvVideoCapability } from './tv-playback-profile';
 import { MediaItem, Season, Episode, SubtitleTrack, UserProfile } from '@/types';
 import { getServerConfig } from './config';
@@ -88,7 +90,7 @@ export class JellyfinClient {
     this.url = (url || config.jellyfinUrl).replace(/\/+$/, '');
     const session = !url && !apiKey ? requestJellyfinSession() : null;
     this.apiKey = session?.accessToken || apiKey || config.jellyfinApiKey;
-    this.userId = session?.id || userId || config.jellyfinUserId;
+    this.userId = requestParentalProfile()?.jellyfinUserId || session?.id || userId || config.jellyfinUserId;
   }
 
   isConfigured(): boolean {
@@ -258,6 +260,36 @@ export class JellyfinClient {
     } catch (e) {
       console.error('Error creating Jellyfin user:', e);
       return null;
+    }
+  }
+
+  async applyKidsPolicy(userId: string, rating: KidsRating | null): Promise<void> {
+    const headers = { ...this.getHeaders(), 'Content-Type': 'application/json' };
+    const userResponse = await fetch(`${this.url}/Users/${encodeURIComponent(userId)}`, { headers, cache: 'no-store', signal: AbortSignal.timeout(10000) });
+    if (!userResponse.ok) throw new Error('Cannot read the linked Jellyfin account policy');
+    const user = await userResponse.json();
+    if (rating && user.Policy?.IsAdministrator) throw new Error('Kids profiles must use a non-administrator Jellyfin account');
+    let policy = backedUpPolicy(userId);
+    if (rating) {
+      if (!user.Policy) throw new Error('Jellyfin account policy unavailable');
+      backupPolicy(userId, user.Policy);
+      const ratings = await fetch(`${this.url}/Localization/ParentalRatings`, { headers, signal: AbortSignal.timeout(10000) });
+      if (!ratings.ok) throw new Error('Jellyfin parental ratings unavailable');
+      const choices = await ratings.json();
+      const selected = choices.find((entry: { Name: string }) => entry.Name?.toUpperCase() === `GB-${rating}`) || choices.find((entry: { Name: string }) => entry.Name?.toUpperCase() === rating);
+      if (!selected || !Number.isFinite(selected.Value)) throw new Error(`Jellyfin does not recognize the ${rating} rating limit`);
+      policy = { ...user.Policy, MaxParentalRating: selected.Value,
+        BlockUnratedItems: ['Movie', 'Series', 'Trailer', 'Other', 'Book', 'Music', 'ChannelContent', 'LiveTvChannel', 'LiveTvProgram'],
+        EnableContentDownloading: false, EnableRemoteControlOfOtherUsers: false, EnableSharedDeviceControl: false,
+        EnableLiveTvAccess: false, EnableLiveTvManagement: false, EnableUserPreferenceAccess: false };
+    }
+    if (!policy) return;
+    const response = await fetch(`${this.url}/Users/${encodeURIComponent(userId)}/Policy`, { method: 'POST', headers, body: JSON.stringify(policy), signal: AbortSignal.timeout(10000) });
+    if (!response.ok) throw new Error('Jellyfin refused the parental-control policy; profile was not saved');
+    if (rating) {
+      const verified = await fetch(`${this.url}/Users/${encodeURIComponent(userId)}`, { headers, cache: 'no-store', signal: AbortSignal.timeout(10000) });
+      const applied = verified.ok ? (await verified.json()).Policy : null;
+      if (!applied || applied.IsAdministrator || applied.MaxParentalRating !== policy.MaxParentalRating || !policy.BlockUnratedItems || !(policy.BlockUnratedItems as string[]).every(value => applied.BlockUnratedItems?.includes(value))) throw new Error('Jellyfin did not apply the parental-control policy');
     }
   }
 
@@ -745,7 +777,7 @@ export class JellyfinClient {
       backdropUrl,
       year: item.ProductionYear || (item.PremiereDate ? new Date(item.PremiereDate).getFullYear() : undefined),
       releaseDate: item.PremiereDate,
-      rating: item.OfficialRating || (isSeries ? 'TV-MA' : 'PG-13'),
+      rating: item.OfficialRating || undefined,
       matchPercentage: item.CommunityRating ? Math.round(item.CommunityRating * 10 + 5) : 95,
       communityRating: item.CommunityRating,
       durationMinutes,

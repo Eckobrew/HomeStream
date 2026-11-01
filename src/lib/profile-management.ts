@@ -1,3 +1,5 @@
+import { ratingForBirthDate } from './parental-age';
+import { isKids, KIDS_LIMITS, KidsRating, parentPinConfigured, requireParentPin } from './parental-store';
 import crypto from 'crypto';
 import { JellyfinClient } from './jellyfin';
 import { getHomeflixProfiles, saveHomeflixProfiles, PROFILE_PALETTES, getInitials } from './profiles';
@@ -13,6 +15,11 @@ let writes: Promise<unknown> = Promise.resolve();
 export function manageProfile(body: Record<string, unknown>, ownUserId?: string, ownName?: string): Promise<{ profile?: UserProfile; passwordMode?: string }> {
   const result = writes.then(async () => {
     const profiles = await getHomeflixProfiles();
+    const requestedKids = body.isKids === true;
+    const requestedRating = requestedKids ? ratingForBirthDate(body.kidsDateOfBirth) : null;
+    if (requestedKids && (typeof requestedRating !== 'string' || !Object.hasOwn(KIDS_LIMITS, requestedRating))) throw new ProfileError('Enter a valid date of birth that is not in the future');
+    try { await requireParentPin(body.parentPin, requestedKids && !parentPinConfigured()); }
+    catch (error) { throw new ProfileError(error instanceof Error ? error.message : 'Parent PIN required', 403); }
     const avatarId = body.avatarId;
     if (typeof avatarId !== 'string' || !STOCK_AVATARS.includes(avatarId)) throw new ProfileError('Choose a profile picture');
     const action = body.action;
@@ -29,6 +36,8 @@ export function manageProfile(body: Record<string, unknown>, ownUserId?: string,
       const name = typeof body.name === 'string' ? body.name.trim() : profile.name;
       if (!name || name.length > 64) throw new ProfileError('Profile name must contain 1–64 characters');
       if (!ownUserId && profiles.some(p => p.id !== profile!.id && p.name.toLowerCase() === name.toLowerCase())) throw new ProfileError('That profile name already exists', 409);
+      const oldUserId = profile.jellyfinUserId || profile.id;
+      const wasKids = isKids(profile);
       profile.name = ownUserId ? profile.name : name;
       profile.initials = getInitials(profile.name);
       profile.avatarId = avatarId;
@@ -40,6 +49,11 @@ export function manageProfile(body: Record<string, unknown>, ownUserId?: string,
         profile.jellyfinUserId = user.id;
         profile.isAdministrator = Boolean(user.isAdministrator);
       }
+      if (requestedKids) await new JellyfinClient().applyKidsPolicy(profile.jellyfinUserId || profile.id, requestedRating as KidsRating);
+      else if (wasKids) await new JellyfinClient().applyKidsPolicy(oldUserId, null);
+      if (wasKids && requestedKids && oldUserId !== profile.jellyfinUserId) await new JellyfinClient().applyKidsPolicy(oldUserId, null);
+      profile.kidsDateOfBirth = requestedKids ? String(body.kidsDateOfBirth) : undefined;
+      profile.isKids = requestedKids; profile.kidsRating = requestedKids ? requestedRating as KidsRating : undefined;
       await saveHomeflixProfiles(profiles);
       return { profile };
     }
@@ -75,6 +89,9 @@ export function manageProfile(body: Record<string, unknown>, ownUserId?: string,
       id: `hf-${crypto.randomUUID()}`, name, avatarId, avatarUrl: `/profile-avatars/${avatarId}.png`,
       ...palette, initials: getInitials(name), jellyfinUserId: user.id, isAdministrator: Boolean(user.isAdministrator),
     };
+    if (requestedKids) await jellyfin.applyKidsPolicy(user.id, requestedRating as KidsRating);
+    profile.kidsDateOfBirth = requestedKids ? String(body.kidsDateOfBirth) : undefined;
+      profile.isKids = requestedKids; profile.kidsRating = requestedKids ? requestedRating as KidsRating : undefined;
     await saveHomeflixProfiles([...profiles, profile]);
     return { profile, passwordMode };
   });

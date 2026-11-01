@@ -1,9 +1,10 @@
+import { withParentalControls } from '@/lib/parental-controls';
 import { NextResponse } from 'next/server';
 import { QBittorrentClient } from '@/lib/qbittorrent';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+async function handleGET() {
   try {
     const client = new QBittorrentClient();
     if (!client.isConfigured()) {
@@ -28,3 +29,5 @@ export async function GET() {
     );
   }
 }
+
+export const GET = withParentalControls(handleGET);

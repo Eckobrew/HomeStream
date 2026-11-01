@@ -1,3 +1,4 @@
+import { withParentalControls } from '@/lib/parental-controls';
 import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
@@ -58,7 +59,7 @@ function findTorrentFilePath(
   return null;
 }
 
-export async function GET(request: NextRequest) {
+async function handleGET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const hash = searchParams.get('hash');
   const rawPath = searchParams.get('path');
@@ -364,3 +365,5 @@ export async function GET(request: NextRequest) {
     },
   });
 }
+
+export const GET = withParentalControls(handleGET);

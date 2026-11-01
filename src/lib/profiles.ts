@@ -1,3 +1,5 @@
+import { ratingForBirthDate } from './parental-age';
+import { getServerConfig } from './config';
 import fs from 'fs';
 import path from 'path';
 import { UserProfile } from '@/types';
@@ -6,7 +8,7 @@ import { PROFILE_PALETTES, getInitials } from './profile-constants';
 
 export { PROFILE_PALETTES, getInitials };
 
-function getProfilesFilePath(): string {
+export function getProfilesFilePath(): string {
   const custom = process.env.DATA_DIR;
   let targetDir = custom || path.join(process.cwd(), 'data');
 
@@ -29,6 +31,7 @@ function getProfilesFilePath(): string {
  * Load decoupled HomeFlix profiles from persistent storage.
  * Returns an empty array on first run when no profiles have been created or imported yet.
  */
+let birthdayUpdate: Promise<void> | undefined;
 export async function getHomeflixProfiles(): Promise<UserProfile[]> {
   const filePath = getProfilesFilePath();
 
@@ -36,12 +39,29 @@ export async function getHomeflixProfiles(): Promise<UserProfile[]> {
     if (fs.existsSync(filePath)) {
       const content = fs.readFileSync(filePath, 'utf-8');
       const parsed: UserProfile[] = JSON.parse(content);
+      if (!Array.isArray(parsed) || parsed.some(p => !p || typeof p.id !== 'string' || (p.isKids && !['U', 'PG', '12', '15', '18'].includes(p.kidsRating || '')))) throw new Error('Invalid profile storage');
       if (Array.isArray(parsed)) {
+        if (birthdayUpdate) { await birthdayUpdate; return getHomeflixProfiles(); }
+        const changed = parsed.filter(p => p.isKids && p.kidsDateOfBirth && p.kidsRating !== (ratingForBirthDate(p.kidsDateOfBirth) || 'U'));
+        if (changed.length) {
+          birthdayUpdate = (async () => {
+            const config = getServerConfig();
+            const jellyfin = new JellyfinClient(config.jellyfinUrl, config.jellyfinApiKey);
+            for (const profile of changed) {
+              const ceiling = ratingForBirthDate(profile.kidsDateOfBirth) || 'U';
+              await jellyfin.applyKidsPolicy(profile.jellyfinUserId || profile.id, ceiling);
+              profile.kidsRating = ceiling;
+            }
+            await saveHomeflixProfiles(parsed);
+          })();
+          try { await birthdayUpdate; } finally { birthdayUpdate = undefined; }
+        }
         return parsed;
       }
     }
   } catch (err) {
     console.error('Failed reading profiles.json:', err);
+    throw new Error('Profile storage unavailable');
   }
 
   return [];

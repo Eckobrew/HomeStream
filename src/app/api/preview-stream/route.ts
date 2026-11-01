@@ -1,3 +1,4 @@
+import { withParentalControls } from '@/lib/parental-controls';
 import { withJellyfinSession } from '@/lib/jellyfin-session';
 import { NextRequest, NextResponse } from 'next/server';
 import { JellyfinClient } from '@/lib/jellyfin';
@@ -108,4 +109,4 @@ async function handleGET(request: NextRequest) {
   return NextResponse.redirect(fallbackUrl, 302);
 }
 
-export const GET = withJellyfinSession(handleGET);
+export const GET = withJellyfinSession(withParentalControls(handleGET));

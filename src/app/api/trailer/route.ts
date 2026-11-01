@@ -1,3 +1,4 @@
+import { withParentalControls } from '@/lib/parental-controls';
 import { NextRequest, NextResponse } from 'next/server';
 import { SeerrClient } from '@/lib/seerr';
 import { JellyfinClient } from '@/lib/jellyfin';
@@ -7,7 +8,7 @@ export const dynamic = 'force-dynamic';
 // In-memory cache for ultra-fast trailer responses on hover
 const trailerCache = new Map<string, { key: string; name: string; site: string; type: string } | null>();
 
-export async function GET(request: NextRequest) {
+async function handleGET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const tmdbIdParam = searchParams.get('tmdbId');
   const typeParam = searchParams.get('type') || 'movie';
@@ -75,3 +76,5 @@ export async function GET(request: NextRequest) {
     }
   );
 }
+
+export const GET = withParentalControls(handleGET);

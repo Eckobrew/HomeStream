@@ -1,3 +1,8 @@
+import { activeProfile, pinProfileRequest, guardKidsRequest, parentalResponse, ParentalDenied } from '@/lib/parental-controls';
+import { withParentalProfile } from '@/lib/parental-runtime';
+import { parentalResource } from '@/lib/parental-resource';
+import { denyPasswordlessAdultLogin, isKids, KIDS_LIMITS, kidsPolicyRevision, parentPinConfigured, requireParentPin } from '@/lib/parental-store';
+import { selectDeviceProfile } from '@/lib/devices';
 import { manageProfile, ProfileError, STOCK_AVATARS } from '@/lib/profile-management';
 import { withJellyfinSession } from '@/lib/jellyfin-session';
 import { createHmac, timingSafeEqual } from 'crypto';
@@ -65,6 +70,7 @@ async function dispatch(request: NextRequest, context: Context) {
   if (get && route === 'discovery') {
     return NextResponse.json({ apiVersion: 1, appName: 'HomeStream', cast: true, pairing: 'local', localPairing: directLocal(request), jellyfinLogin: true });
   }
+  if ((get || request.method === 'HEAD') && route === 'parental-resource') return parentalResource(request);
   if (get && route === 'image') return handleImage(request);
   if (get && route === 'auth/users') return NextResponse.json({ users: [] });
   if (!get && route === 'auth/login') {
@@ -83,6 +89,7 @@ async function dispatch(request: NextRequest, context: Context) {
     if (!result.ok) return NextResponse.json({ error: 'Invalid username or password' }, { status: 401 });
     const auth = await result.json();
     if (!auth.User?.Id || !auth.User?.Name) return NextResponse.json({ error: 'Invalid authentication response' }, { status: 502 });
+    if (await denyPasswordlessAdultLogin(auth.User.Id, body.password, auth.User.Name)) return NextResponse.json({ error: 'Adult Jellyfin accounts need a password different from their username when Kids profiles are enabled. You can also use local pairing and the parent PIN.' }, { status: 403 });
     const user = { id: auth.User.Id, name: auth.User.Name };
     return NextResponse.json({ user, token: await createSession({ ...user, accessToken: auth.AccessToken }, 'mobile') });
   }
@@ -93,14 +100,30 @@ async function dispatch(request: NextRequest, context: Context) {
     if (!body || typeof body.deviceId !== 'string' || !body.deviceId || body.deviceId.length > 200) return NextResponse.json({ error: 'Device identity required' }, { status: 400 });
     const externalUrl = process.env.HOMESTREAM_EXTERNAL_URL || '';
     if (!externalUrl) return NextResponse.json({ error: 'Set HOMESTREAM_EXTERNAL_URL on the server so local pairing also works away from home.' }, { status: 503 });
-    const device = registerDevice(body.deviceId, typeof body.deviceName === 'string' ? body.deviceName.slice(0, 200) : 'Android', 'android', true);
+    const device = registerDevice(body.deviceId, typeof body.deviceName === 'string' ? body.deviceName.slice(0, 200) : 'Android', 'android', true, true);
     console.info('[mobile] Local device paired');
     return NextResponse.json({ token: device.token, externalUrl, serverName: 'HomeStream' });
   }
   const denied = await authorize(request);
   if (denied) return denied;
-  // A Jellyfin login is bound to that user's history; a household pairing token
-  // deliberately retains access to all household profiles.
+  const profile = await activeProfile(request);
+  if (profile) request = await pinProfileRequest(request, profile);
+  return withParentalProfile(profile, async () => {
+    if (profile) await guardKidsRequest(request, profile);
+    const response = await dispatchContent(request, context);
+    const output = profile ? await parentalResponse(request, response, profile) : response;
+    if (profile) {
+      output.headers.set('X-HomeStream-Profile', profile.id);
+      output.headers.set('X-HomeStream-Policy', kidsPolicyRevision(profile));
+      output.headers.set('X-HomeStream-Kids', isKids(profile) ? profile.kidsRating! : '');
+    }
+    return output;
+  }, request.headers.get('authorization')?.slice(7));
+}
+async function dispatchContent(request: NextRequest, context: Context) {
+  const params = await context.params;
+  const route = params.path.join('/');
+  const get = request.method === 'GET';
   const session = await readSession(request.headers.get('authorization')?.replace(/^Bearer /i, ''), 'mobile');
   if (session) {
     const url = request.nextUrl.clone();
@@ -117,8 +140,6 @@ async function dispatch(request: NextRequest, context: Context) {
   }
   if (get && route === 'trailer') return trailer(request);
   if (get && route === 'capabilities') return NextResponse.json({ apiVersion: 1, appName: 'HomeStream', cast: true, jellyfinLogin: true });
-  // Pairing tokens grant household access. Profile IDs select watch history;
-  // they are not individual authentication or parental-control boundaries.
   if (get && route === 'continue-watching') {
     const uid = await resolveJellyfinUserId(session?.id || request.nextUrl.searchParams.get('userId') || undefined);
     const jellyfin = new JellyfinClient(undefined, undefined, uid);
@@ -132,11 +153,28 @@ async function dispatch(request: NextRequest, context: Context) {
   if (get && route === 'profiles') {
     const all = await getHomeflixProfiles();
     const profiles = session ? [all.find(p => (p.jellyfinUserId || p.id) === session.id) || { id: session.id, name: session.name, jellyfinUserId: session.id }] : all;
-    return NextResponse.json({ profiles, canManage: !session, avatars: STOCK_AVATARS });
+    return NextResponse.json({ profiles, canManage: !session, avatars: STOCK_AVATARS, parentPinConfigured: parentPinConfigured(), activeProfileId: (await activeProfile(request))?.id || '' });
   }
-  if (get && route === 'profiles/users') {
-    if (session) return NextResponse.json({ error: 'Household pairing required' }, { status: 403 });
-    return NextResponse.json({ users: (await new JellyfinClient().getUsers()).map(user => ({ id: user.id, name: user.name })) });
+  if (get && route === 'profiles/status') {
+    const profile = await activeProfile(request);
+    return NextResponse.json({ profile, revision: profile ? kidsPolicyRevision(profile) : '', parentPinConfigured: parentPinConfigured() });
+  }
+  if (!get && route === 'profiles/select') {
+    const body = await request.json().catch(() => null);
+    const target = (await getHomeflixProfiles()).find(p => p.id === body?.profileId);
+    if (!target) return NextResponse.json({ error: 'Profile not found' }, { status: 404 });
+    const current = await activeProfile(request);
+    if (isKids(current) && (!isKids(target) || KIDS_LIMITS[target.kidsRating] > KIDS_LIMITS[current.kidsRating])) {
+      try { await requireParentPin(body?.parentPin); }
+      catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : 'Parent PIN required', pinRequired: true }, { status: 403 }); }
+    }
+    selectDeviceProfile(request.headers.get('authorization')!.slice(7), target.id);
+    return NextResponse.json({ profile: target, revision: kidsPolicyRevision(target) });
+  }
+  if (route === 'profiles/users') {
+    try { await requireParentPin(get ? undefined : (await request.json().catch(() => null))?.parentPin); }
+    catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : 'Parent PIN required' }, { status: 403 }); }
+    return NextResponse.json({ users: (await new JellyfinClient().getUsers()).map(user => ({ id: user.id, name: user.name, isAdministrator: user.isAdministrator })) });
   }
   if (!get && route === 'profiles') {
     const body = await request.json().catch(() => null);
@@ -240,6 +278,7 @@ async function handle(request: NextRequest, context: Context) {
   try {
     response = await dispatch(request, context);
   } catch (error) {
+    if (error instanceof ParentalDenied) return NextResponse.json({ error: error.message }, { status: 403 });
     console.error('Mobile API request failed:', error);
     response = NextResponse.json({ error: 'Mobile API request failed' }, { status: 500 });
   }
@@ -251,3 +290,6 @@ async function handle(request: NextRequest, context: Context) {
 
 export const GET = withJellyfinSession(handle);
 export const POST = withJellyfinSession(handle);
+
+export const HEAD = withJellyfinSession(handle);
+export function OPTIONS() { return new NextResponse(null, { status: 204, headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET,HEAD,OPTIONS', 'Access-Control-Allow-Headers': 'Range,Content-Type', 'Access-Control-Max-Age': '600' } }); }

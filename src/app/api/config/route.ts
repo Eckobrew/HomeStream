@@ -1,3 +1,4 @@
+import { withParentalControls } from '@/lib/parental-controls';
 import { NextRequest, NextResponse } from 'next/server';
 import { JellyfinClient } from '@/lib/jellyfin';
 import { SeerrClient } from '@/lib/seerr';
@@ -7,7 +8,7 @@ import { getHomeflixProfiles } from '@/lib/profiles';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+async function handleGET() {
   const config = getServerConfig();
   const profiles = await getHomeflixProfiles();
 
@@ -36,7 +37,7 @@ export async function GET() {
   });
 }
 
-export async function POST(request: NextRequest) {
+async function handlePOST(request: NextRequest) {
   try {
     const body = await request.json();
     const action = request.nextUrl.searchParams.get('action') || body.action;
@@ -93,3 +94,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: msg }, { status: 500 });
   }
 }
+
+export const GET = withParentalControls(handleGET);
+export const POST = withParentalControls(handlePOST);

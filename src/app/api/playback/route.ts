@@ -1,3 +1,4 @@
+import { withParentalControls } from '@/lib/parental-controls';
 import { parseTvCapabilities } from '@/lib/tv-playback-profile';
 import { withJellyfinSession } from '@/lib/jellyfin-session';
 import { NextRequest, NextResponse } from 'next/server';
@@ -57,4 +58,4 @@ async function handleGET(request: NextRequest) {
   }
 }
 
-export const GET = withJellyfinSession(handleGET);
+export const GET = withJellyfinSession(withParentalControls(handleGET));

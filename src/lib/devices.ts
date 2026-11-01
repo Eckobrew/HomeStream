@@ -10,6 +10,7 @@ export interface PairedDevice {
   pairedAt: string;
   lastSeen: string;
   pairedLocally: boolean;
+  activeProfileId?: string;
 }
 
 function getDevicesFilePath(): string {
@@ -52,6 +53,7 @@ export function saveDevices(devices: Record<string, PairedDevice>): void {
     fs.renameSync(tmp, filePath);
   } catch (e) {
     console.error('Failed saving devices.json:', e);
+    throw new Error('Device storage unavailable');
   }
 }
 
@@ -59,14 +61,15 @@ export function registerDevice(
   deviceId: string,
   deviceName: string,
   client = 'android',
-  pairedLocally = true
+  pairedLocally = true,
+  forceNew = false
 ): PairedDevice {
   const devices = loadDevices();
   const cleanId = (deviceId || '').trim();
 
   // If this device was already paired, update its record
   for (const dev of Object.values(devices)) {
-    if (dev.deviceId === cleanId && cleanId.length > 0) {
+    if (!forceNew && dev.deviceId === cleanId && cleanId.length > 0) {
       dev.deviceName = deviceName || dev.deviceName;
       dev.client = client;
       dev.pairedLocally = pairedLocally;
@@ -115,4 +118,16 @@ export function isLocallyPairedDeviceToken(token: string): boolean {
   const devices = loadDevices();
   const device = Object.prototype.hasOwnProperty.call(devices, token) ? devices[token] : undefined;
   return Boolean(device && device.token === token && device.pairedLocally === true && device.client !== 'android-jellyfin');
+}
+
+export function registeredDevice(token: string): PairedDevice | undefined {
+  if (!/^hst_dev_[a-f0-9]{48}$/.test(token)) return;
+  const devices = loadDevices();
+  const device = Object.hasOwn(devices, token) ? devices[token] : undefined;
+  return device?.token === token && device.client !== 'android-jellyfin' ? device : undefined;
+}
+export function selectDeviceProfile(token: string, profileId: string) {
+  const devices = loadDevices();
+  if (!Object.hasOwn(devices, token) || devices[token].token !== token) throw new Error('Device not registered');
+  devices[token].activeProfileId = profileId; saveDevices(devices);
 }
