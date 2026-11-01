@@ -218,7 +218,7 @@ export class JellyfinClient {
     return null;
   }
 
-  async createUser(name: string): Promise<{ id: string; name: string } | null> {
+  async createUser(name: string, password?: string): Promise<{ id: string; name: string } | null> {
     if (!this.isConfigured() || !name) return null;
     try {
       const res = await fetch(`${this.url}/Users/New`, {
@@ -227,7 +227,8 @@ export class JellyfinClient {
           ...this.getHeaders(),
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ Name: name.trim() }),
+        body: JSON.stringify({ Name: name.trim(), ...(password !== undefined ? { Password: password } : {}) }),
+        signal: AbortSignal.timeout(15000),
       });
       if (!res.ok) {
         const text = await res.text();

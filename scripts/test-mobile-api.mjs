@@ -179,7 +179,9 @@ try {
   assert.ok(!login.token.includes('upstream-secret'));
   await api('auth/pair', 403, { deviceId: 'cannot-escalate' }, login.token);
   const scopedProfiles = await api('profiles', 200, undefined, login.token);
-  assert.deepEqual(scopedProfiles.profiles, [{ id: 'login-user', name: 'Viewer' }]);
+  assert.deepEqual(scopedProfiles.profiles, [{ id: 'login-user', name: 'Viewer', jellyfinUserId: 'login-user' }]);
+  assert.equal(scopedProfiles.canManage, false);
+  await api('profiles/users', 403, undefined, login.token);
   await api('progress', 200, { itemId: 'episode', userId: 'another-user', positionTicks: 100 }, login.token);
   assert.equal(jellyfinCalls.at(-1).body.UserId, 'login-user');
   assert.equal(jellyfinCalls.at(-1).token, 'upstream-secret');

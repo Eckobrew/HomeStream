@@ -1,3 +1,4 @@
+import { manageProfile, ProfileError, STOCK_AVATARS } from '@/lib/profile-management';
 import { withJellyfinSession } from '@/lib/jellyfin-session';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
@@ -125,7 +126,24 @@ async function dispatch(request: NextRequest, context: Context) {
     catch { return NextResponse.json({ error: 'Resume history temporarily unavailable' }, { status: 503 }); }
   }
   if (get && route === 'profiles') {
-    return NextResponse.json({ profiles: session ? [{ id: session.id, name: session.name }] : await getHomeflixProfiles() });
+    const all = await getHomeflixProfiles();
+    const profiles = session ? [all.find(p => (p.jellyfinUserId || p.id) === session.id) || { id: session.id, name: session.name, jellyfinUserId: session.id }] : all;
+    return NextResponse.json({ profiles, canManage: !session, avatars: STOCK_AVATARS });
+  }
+  if (get && route === 'profiles/users') {
+    if (session) return NextResponse.json({ error: 'Household pairing required' }, { status: 403 });
+    return NextResponse.json({ users: (await new JellyfinClient().getUsers()).map(user => ({ id: user.id, name: user.name })) });
+  }
+  if (!get && route === 'profiles') {
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return NextResponse.json({ error: 'Profile details required' }, { status: 400 });
+    if (!allowLogin(request)) return NextResponse.json({ error: 'Too many profile changes. Try again shortly.' }, { status: 429 });
+    try { return NextResponse.json({ success: true, ...await manageProfile(body, session?.id, session?.name) }); }
+    catch (error) {
+      if (error instanceof ProfileError) return NextResponse.json({ error: error.message }, { status: error.status });
+      console.error('Could not save profile');
+      return NextResponse.json({ error: 'Could not save profile. Check server storage and Jellyfin configuration.' }, { status: 500 });
+    }
   }
   if (!get && route === 'watched') {
     const body = await request.json().catch(() => null);

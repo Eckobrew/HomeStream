@@ -145,6 +145,7 @@ export interface DownloadingTorrentItem {
 }
 
 export interface UserProfile {
+  avatarId?: string;
   id: string;
   name: string;
   avatarColor: string; // Tailwind gradient e.g. "from-red-600 to-red-800"

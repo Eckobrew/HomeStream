@@ -52,7 +52,9 @@ export async function getHomeflixProfiles(): Promise<UserProfile[]> {
  */
 export async function saveHomeflixProfiles(profiles: UserProfile[]): Promise<void> {
   const filePath = getProfilesFilePath();
-  fs.writeFileSync(filePath, JSON.stringify(profiles, null, 2), 'utf-8');
+  const temporary = `${filePath}.${process.pid}.tmp`;
+  fs.writeFileSync(temporary, JSON.stringify(profiles, null, 2), { encoding: 'utf-8', mode: 0o600 });
+  fs.renameSync(temporary, filePath);
 }
 
 /**
