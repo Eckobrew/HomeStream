@@ -487,9 +487,9 @@ export class JellyfinClient {
               ...(capability.profiles.length ? [{ Condition: 'EqualsAny', Property: 'VideoProfile', Value: capability.profiles.join('|'), IsRequired: true }] : []),
             ],
           })) : [],
-          // Prefer a progressive remux when possible. Explicit compatibility
-          // mode selects H.264/AAC HLS as the final decoder fallback.
-          TranscodingProfiles: options?.forceTranscode ? [hlsProfile, progressiveProfile] : [progressiveProfile, hlsProfile],
+          // Keep a finite, seekable manifest when the original cannot play.
+          // A growing fragmented MP4 reports encoded duration instead of title duration.
+          TranscodingProfiles: [hlsProfile, progressiveProfile],
         },
       };
 
