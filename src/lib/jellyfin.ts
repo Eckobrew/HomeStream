@@ -434,6 +434,7 @@ export class JellyfinClient {
     mediaSourceId?: string;
     totalDurationTicks?: number;
     durationSeconds?: number;
+    resumePositionTicks?: number;
   }> {
     if (!this.isConfigured() || !itemId) {
       return {
@@ -447,6 +448,7 @@ export class JellyfinClient {
     if (seerrMatch) targetItemId = await this.findItemByTmdbId(Number(seerrMatch[2]), seerrMatch[1] === 'movie' ? 'movie' : 'tv') || itemId;
     const details = await this.getItemDetails(targetItemId);
     if (details?.type === 'Series') targetItemId = details.playableEpisodeId || await this.getSeriesFirstPlayableEpisodeId(targetItemId) || targetItemId;
+    const resumePositionTicks = details ? details.playbackPositionTicks || 0 : undefined;
 
     try {
       const uid = await this.getFirstUserId();
@@ -524,7 +526,7 @@ export class JellyfinClient {
           if (!options?.forceTranscode && mediaSource.SupportsDirectPlay) {
             return {
               streamUrl: `${this.url}/Videos/${encodeURIComponent(targetItemId)}/stream.${encodeURIComponent(mediaSource.Container || 'mp4')}?api_key=${encodeURIComponent(this.apiKey)}&Static=true&MediaSourceId=${encodeURIComponent(mediaSource.Id)}`,
-              isTranscoding: false, playMethod: 'DirectPlay', sourceVideoCodec: mediaSource.MediaStreams?.find((s: { Type: string }) => s.Type === 'Video')?.Codec, sourceAudioCodec: mediaSource.MediaStreams?.find((s: { Type: string }) => s.Type === 'Audio')?.Codec, playSessionId: data.PlaySessionId, mediaSourceId: mediaSource.Id, totalDurationTicks, durationSeconds,
+              isTranscoding: false, playMethod: 'DirectPlay', sourceVideoCodec: mediaSource.MediaStreams?.find((s: { Type: string }) => s.Type === 'Video')?.Codec, sourceAudioCodec: mediaSource.MediaStreams?.find((s: { Type: string }) => s.Type === 'Audio')?.Codec, playSessionId: data.PlaySessionId, mediaSourceId: mediaSource.Id, totalDurationTicks, durationSeconds, resumePositionTicks,
             };
           }
           if (!options?.forceTranscode && mediaSource.SupportsDirectStream && mediaSource.DirectStreamUrl) {
@@ -536,6 +538,7 @@ export class JellyfinClient {
               mediaSourceId: mediaSource.Id,
               totalDurationTicks,
               durationSeconds,
+              resumePositionTicks,
             };
           }
 
@@ -551,6 +554,7 @@ export class JellyfinClient {
               mediaSourceId: mediaSource.Id,
               totalDurationTicks,
               durationSeconds,
+              resumePositionTicks,
             };
           }
         }
@@ -1038,11 +1042,18 @@ export class JellyfinClient {
 
       if (data.Type === 'Series') {
         media.seasons = await this.getSeriesSeasons(itemId);
-        // Find first playable episode
-        const firstEp = media.seasons.flatMap((s) => s.episodes || []).find((ep) => ep.videoStreamUrl);
+        const playable = media.seasons.flatMap((s) => s.episodes || []).filter(ep => ep.videoStreamUrl);
+        // Resume an in-progress episode before choosing the next unwatched one.
+        const regular = playable.filter(ep => (ep.seasonNumber || 0) > 0);
+        const ordered = regular.length ? regular : playable;
+        const firstEp = ordered.find(ep => (ep.playbackPositionTicks || 0) > 0 && !ep.played)
+          || ordered.find(ep => !ep.played) || ordered[0];
         if (firstEp) {
           media.playableEpisodeId = firstEp.jellyfinId || firstEp.id;
           media.videoStreamUrl = firstEp.videoStreamUrl;
+          media.playbackPositionTicks = firstEp.playbackPositionTicks || 0;
+          media.totalDurationTicks = firstEp.totalDurationTicks;
+          media.progressPercent = firstEp.progressPercent;
         } else {
           const epId = await this.getSeriesFirstPlayableEpisodeId(itemId);
           if (epId) {
