@@ -54,3 +54,14 @@ Scope: all API routes and the Jellyfin/Seerr/qBittorrent clients, identity/profi
 - Webhook integrations must send `Authorization: Bearer <HOMESTREAM_WEBHOOK_TOKEN>`; never put this secret in the receiver page or Android app.
 - Custom receiver publication requires HTTPS. Development HTTP is supported by Google's receiver registration rules. Public receiver assets contain no household API token.
 - No claim of universal codec support, solved hardware audio sync or successful Cast launch is made without the user's device checks.
+
+
+### Follow-up: remote access and playback reports (1 November)
+
+- Production HTTP sessions previously set Secure cookies and could not persist at the configured HTTP origin; cookie security now follows the validated browser/public origin, including HTTPS upgrades. Proxy origin checks accept the configured public origin without accepting arbitrary forwarded host headers.
+- The socket preload can verify a forwarding chain only from explicitly configured exact TCP proxy peers (`HOMESTREAM_TRUSTED_PROXIES`), reading from the trusted end. Local native auto-pairing still rejects proxied requests. The Proxmox subnet router uses SNAT, so its LAN address is expected instead of the originating Tailscale IP.
+- Jellyfin logs confirmed API-key playback sessions with `User null`. Jellyfin ignores UserId in session-report bodies. Household progress now also persists playback fields through the explicit user-data endpoint for the resolved profile. Signed Jellyfin-login sessions retain their scoped user credentials.
+- Series details choose an in-progress regular episode before the next unplayed episode. Playback negotiation exposes fresh saved ticks, avoiding stale browse progress.
+- Logs confirmed copied H.264 video and EAC3-to-AAC audio in a growing MP4, source runtime 45:06. Prefer finite HLS for remux/transcode delivery and retain library runtime in outgoing custom receiver status. Direct Play remains preferred for compatible originals.
+
+Hardware acceptance is listed in the Android TOBETESTED artifact; these changes do not constitute manual device playback or UI acceptance testing.
