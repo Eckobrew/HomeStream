@@ -70,7 +70,7 @@ export async function parentalResource(request: NextRequest): Promise<Response> 
     const jf = new URL(config.jellyfinUrl);
     const local = target.origin === jf.origin;
     if (!local && !(ticket.kind === 'image' && target.protocol === 'https:' && ['image.tmdb.org', 'images.unsplash.com'].includes(target.hostname))) throw new Error('Invalid source');
-    if (local && ticket.kind === 'stream' && !target.pathname.startsWith(`${jf.pathname.replace(/\/$/, '')}/Videos/`)) throw new Error('Invalid media path');
+    if (local && ticket.kind === 'stream' && !target.pathname.toLowerCase().startsWith(`${jf.pathname.replace(/\/$/, '')}/Videos/`.toLowerCase())) throw new Error('Invalid media path');
     const headers: Record<string, string> = {};
     if (local) { headers['X-Emby-Token'] = config.jellyfinApiKey; headers.Authorization = `MediaBrowser Token="${config.jellyfinApiKey}"`; }
     const range = request.headers.get('range'); if (range && /^bytes=\d*-\d*$/.test(range)) headers.Range = range;

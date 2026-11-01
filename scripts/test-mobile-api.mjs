@@ -37,7 +37,11 @@ const jellyfin = createServer(async (request, response) => {
   } else if (parsedUrl.pathname === '/UserItems/Resume' && parsedUrl.searchParams.get('userId') === 'kid-user') {
     response.end(JSON.stringify({ Items: ['allowed', 'adult', 'unrated'].map(Id => ({ Id, Name: Id, Type: 'Movie', OfficialRating: Id === 'allowed' ? 'U' : Id === 'adult' ? '18' : undefined, UserData: { PlaybackPositionTicks: 100000000 }, RunTimeTicks: 9000000000 })) }));
   } else if (parsedUrl.pathname === '/Items/allowed/PlaybackInfo') {
-    response.end(JSON.stringify({ PlaySessionId: 'kid-session', MediaSources: [{ Id: 'allowed-source', Container: 'mp4', SupportsDirectPlay: true }] }));
+    response.end(JSON.stringify({ PlaySessionId: 'kid-session', MediaSources: [{ Id: 'allowed-source', Container: 'mp4', SupportsDirectPlay: true, TranscodingUrl: '/videos/allowed/master.m3u8?api_key=fake-stream-key' }] }));
+  } else if (parsedUrl.pathname === '/videos/allowed/master.m3u8') {
+    response.setHeader('Content-Type', 'application/vnd.apple.mpegurl'); response.end('#EXTM3U\n#EXTINF:6,\nsegment.ts\n');
+  } else if (parsedUrl.pathname === '/videos/allowed/segment.ts') {
+    response.setHeader('Content-Type', 'video/mp2t'); response.end('safe-segment');
   } else if (parsedUrl.pathname === '/Videos/allowed/stream.mp4') {
     response.setHeader('Content-Type', 'video/mp4'); response.end('safe-movie-bytes');
   } else if (request.url === '/Users/AuthenticateByName') {
@@ -263,6 +267,12 @@ try {
   const safeStream = await fetch(restricted.streamUrl);
   assert.equal(safeStream.status, 200);
   assert.equal(await safeStream.text(), 'safe-movie-bytes');
+  const hls = await api('playback?itemId=allowed&forceTranscode=true', 200, undefined, legacyDeviceToken);
+  const playlist = await (await fetch(hls.streamUrl)).text();
+  assert.ok(playlist.startsWith('#EXTM3U'));
+  assert.ok(!playlist.includes('api_key'));
+  const segment = playlist.split('\n').find(line => line.startsWith('http'));
+  assert.equal(await (await fetch(segment)).text(), 'safe-segment');
   assert.equal((await fetch(`${origin}/api/mobile/v1/image?itemId=adult`)).status, 403);
   await api('playback?itemId=allowed', 403); // Unbound household bearer cannot bypass Kids mode.
   await api('profiles/select', 200, { profileId: 'household-profile', parentPin: '2468' }, legacyDeviceToken);
