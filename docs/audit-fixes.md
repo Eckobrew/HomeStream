@@ -133,3 +133,12 @@ zero known production vulnerabilities. Legacy full-repository lint issues and
 has a household secret below the new 32-character minimum; rollout must provision
 a new strong household secret and session signing secret while preserving the
 existing device registry (two registered local devices were observed).
+
+## Android TV playback and launcher follow-up
+
+- Native TV requests carry per-decoder resolution bounds and H.264/HEVC profiles.
+  These conditions are passed to Jellyfin for direct-play and conversion decisions.
+  Phone and Cast negotiation continue using their existing paths.
+- Added authenticated `continue-watching` API for TV launcher synchronization.
+  It bypasses resume-history caching and returns failure rather than an empty
+  history when Jellyfin is unavailable, preserving existing launcher cards.

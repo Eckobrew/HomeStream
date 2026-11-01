@@ -1,3 +1,4 @@
+import { parseTvCapabilities } from '@/lib/tv-playback-profile';
 import { withJellyfinSession } from '@/lib/jellyfin-session';
 import { NextRequest, NextResponse } from 'next/server';
 import { JellyfinClient } from '@/lib/jellyfin';
@@ -28,11 +29,17 @@ async function handleGET(request: NextRequest) {
     );
   }
 
+  const nativeTv = searchParams.get('receiver') === 'native-tv';
+  const tvCapabilities = nativeTv ? parseTvCapabilities(searchParams.get('videoCapabilities')) : [];
+  if (nativeTv && !tvCapabilities.some(capability => capability.codec === 'h264')) {
+    return NextResponse.json({ error: 'TV decoder capabilities unavailable. Reopen playback to retry.' }, { status: 400 });
+  }
   try {
     const result = await jellyfin.getPlaybackStream(itemId, {
       canPlayHevc,
-      receiver: searchParams.get('receiver') === 'cast' ? 'cast' : searchParams.get('receiver') === 'browser' ? 'browser' : undefined,
-      videoCodecs: (searchParams.get('videoCodecs') || '').split(',').filter(codec => ['h264', 'hevc', 'vp8', 'vp9', 'av1'].includes(codec)),
+      receiver: nativeTv ? 'native-tv' : searchParams.get('receiver') === 'cast' ? 'cast' : searchParams.get('receiver') === 'browser' ? 'browser' : undefined,
+      tvCapabilities,
+      videoCodecs: nativeTv ? tvCapabilities.map(capability => capability.codec) : (searchParams.get('videoCodecs') || '').split(',').filter(codec => ['h264', 'hevc', 'vp8', 'vp9', 'av1'].includes(codec)),
       maxWidth: searchParams.get('maxWidth') === '3840' ? 3840 : 1920,
       maxHeight: searchParams.get('maxHeight') === '2160' ? 2160 : 1080,
       audioCodecs: (searchParams.get('audioCodecs') || 'aac,mp3').split(',').filter(codec => ['aac', 'mp3', 'opus', 'flac', 'vorbis', 'ac3', 'eac3', 'dts'].includes(codec)),

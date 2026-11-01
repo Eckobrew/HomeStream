@@ -118,6 +118,12 @@ async function dispatch(request: NextRequest, context: Context) {
   if (get && route === 'capabilities') return NextResponse.json({ apiVersion: 1, appName: 'HomeStream', cast: true, jellyfinLogin: true });
   // Pairing tokens grant household access. Profile IDs select watch history;
   // they are not individual authentication or parental-control boundaries.
+  if (get && route === 'continue-watching') {
+    const uid = await resolveJellyfinUserId(session?.id || request.nextUrl.searchParams.get('userId') || undefined);
+    const jellyfin = new JellyfinClient(undefined, undefined, uid);
+    try { return NextResponse.json({ items: await jellyfin.getResumeItems(true) }); }
+    catch { return NextResponse.json({ error: 'Resume history temporarily unavailable' }, { status: 503 }); }
+  }
   if (get && route === 'profiles') {
     return NextResponse.json({ profiles: session ? [{ id: session.id, name: session.name }] : await getHomeflixProfiles() });
   }

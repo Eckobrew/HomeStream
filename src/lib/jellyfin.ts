@@ -1,3 +1,4 @@
+import { TvVideoCapability } from './tv-playback-profile';
 import { MediaItem, Season, Episode, SubtitleTrack, UserProfile } from '@/types';
 import { getServerConfig } from './config';
 import { requestJellyfinSession } from './jellyfin-session';
@@ -354,7 +355,8 @@ export class JellyfinClient {
     itemId: string,
     options?: {
       canPlayHevc?: boolean;
-      receiver?: 'cast' | 'browser';
+      receiver?: 'cast' | 'browser' | 'native-tv';
+      tvCapabilities?: TvVideoCapability[];
       videoCodecs?: string[];
       maxWidth?: number;
       maxHeight?: number;
@@ -397,7 +399,7 @@ export class JellyfinClient {
 
       const supportedVideoCodecs = options?.videoCodecs?.length ? options.videoCodecs : options?.canPlayHevc ? ['h264', 'hevc'] : ['h264'];
       const directVideoCodecs = options?.forceTranscode ? '' : supportedVideoCodecs.join(',');
-      const containers = options?.receiver ? ['mp4', 'm4v', 'mov', 'webm'] : ['mkv', 'mp4', 'm4v', 'mov', 'webm', 'ts'];
+      const containers = options?.receiver && options.receiver !== 'native-tv' ? ['mp4', 'm4v', 'mov', 'webm'] : ['mkv', 'mp4', 'm4v', 'mov', 'webm', 'ts'];
       const directPlayProfiles = directVideoCodecs ? containers.map(Container => ({
         Container, Type: 'Video', VideoCodec: directVideoCodecs,
         AudioCodec: options?.audioCodecs?.length ? options.audioCodecs.join(',') : 'aac,mp3',
@@ -418,7 +420,13 @@ export class JellyfinClient {
               { Condition: 'LessThanEqual', Property: 'Width', Value: String(options.maxWidth || 1920), IsRequired: true },
               { Condition: 'LessThanEqual', Property: 'Height', Value: String(options.maxHeight || 1080), IsRequired: true },
             ],
-          }] : [],
+          }] : options?.receiver === 'native-tv' ? (options.tvCapabilities || []).map(capability => ({
+            Type: 'Video', Codec: capability.codec, Conditions: [
+              { Condition: 'LessThanEqual', Property: 'Width', Value: String(capability.width), IsRequired: true },
+              { Condition: 'LessThanEqual', Property: 'Height', Value: String(capability.height), IsRequired: true },
+              ...(capability.profiles.length ? [{ Condition: 'EqualsAny', Property: 'VideoProfile', Value: capability.profiles.join('|'), IsRequired: true }] : []),
+            ],
+          })) : [],
           // Prefer a progressive remux when possible. Explicit compatibility
           // mode selects H.264/AAC HLS as the final decoder fallback.
           TranscodingProfiles: options?.forceTranscode ? [hlsProfile, progressiveProfile] : [progressiveProfile, hlsProfile],
@@ -799,15 +807,15 @@ export class JellyfinClient {
     }
   }
 
-  async getResumeItems(): Promise<MediaItem[]> {
-    if (!this.isConfigured()) return [];
+  async getResumeItems(strict = false): Promise<MediaItem[]> {
+    if (!this.isConfigured()) { if (strict) throw new Error('Jellyfin not configured'); return []; }
     try {
       const uid = await this.getFirstUserId();
       const res = await fetch(
         `${this.url}/UserItems/Resume?userId=${uid}&Limit=16&Fields=Overview,Genres,OfficialRating,CommunityRating,People,RunTimeTicks,LocationType,MediaStreams,Width,Height,MediaSources,SeriesId,SeriesName,SeasonId,IndexNumber,ParentIndexNumber`,
-        { headers: this.getHeaders(), next: { revalidate: 30 } }
+        { headers: this.getHeaders(), ...(strict ? { cache: 'no-store' as const } : { next: { revalidate: 30 } }) }
       );
-      if (!res.ok) return [];
+      if (!res.ok) { if (strict) throw new Error(`Resume history unavailable (${res.status})`); return []; }
       const data = await res.json();
       // Filter out Virtual items and Season containers (episodes and movies are what users actually resume)
       const validItems = (data.Items || []).filter(
@@ -817,6 +825,7 @@ export class JellyfinClient {
       return await this.attachPlayableStreamsToItems(mapped);
     } catch (e) {
       console.error('Error fetching resume items from Jellyfin:', e);
+      if (strict) throw e;
       return [];
     }
   }
