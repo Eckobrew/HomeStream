@@ -22,6 +22,8 @@ Scope: all API routes and the Jellyfin/Seerr/qBittorrent clients, identity/profi
 | Medium | HLS size checks happened after the entire playlist was buffered; proxy errors lost range information. | Bound reads to 2 MB while streaming, cancel oversized bodies and retain upstream range/CORS headers on errors. |
 | Medium | Docker and CI used end-of-life Node 20. | Move to supported Node 22, matching the local build runtime. |
 | Low | Routes without a request argument were treated as the downloads endpoint by the parental wrapper. | Config/download handlers now receive their actual request. |
+| Medium | Request quality fallbacks used profile IDs from another installation, including while providers were unavailable. | A Server default choice omits the quality ID and lets Seerr use its configured default; live profiles remain selectable, and stale dialog fetches are aborted. |
+| High | External-login caches did not confirm Kids policy before restoration. | Added a current-session policy endpoint without exposing household profile management, and updated Android cache/startup checks for both setup modes. |
 | Low | Malformed 4K/quality/server request options could be coerced into unintended settings. | Validate optional booleans and numeric IDs before submission. |
 | Low | Computed library match percentages could exceed 100. | Clamp output to 0–100. |
 | Low | Direct-path streaming accepted arbitrary file extensions within the downloads mount. | Require a recognized video filename; incomplete-file suffixes need hash-based streaming. |

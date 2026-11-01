@@ -27,15 +27,8 @@ export const RequestDialog: React.FC<RequestDialogProps> = ({
   onSuccess,
 }) => {
   const [seasonChoice, setSeasonChoice] = useState<'all' | 'first' | 'latest'>('all');
-  const [qualityProfiles, setQualityProfiles] = useState<QualityProfile[]>([
-    { id: 6, name: 'HD - 720p / 1080p (Recommended)', is4k: false },
-    { id: 4, name: 'HD - 1080p High Quality', is4k: false },
-    { id: 5, name: '4K Ultra HD', is4k: true },
-    { id: 7, name: 'WEB 1080p / 720p', is4k: false },
-    { id: 3, name: '720p Standard', is4k: false },
-    { id: 1, name: 'Any Quality', is4k: false },
-  ]);
-  const [selectedProfileId, setSelectedProfileId] = useState<number>(6);
+  const [qualityProfiles, setQualityProfiles] = useState<QualityProfile[]>([{ id: -1, name: 'Server default (Radarr / Sonarr)', is4k: false }]);
+  const [selectedProfileId, setSelectedProfileId] = useState<number>(-1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [resultMessage, setResultMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -44,7 +37,10 @@ export const RequestDialog: React.FC<RequestDialogProps> = ({
   useEffect(() => {
     if (!item) return;
     const type = item.type === 'Series' ? 'tv' : 'movie';
-    fetch(`/api/request?type=${type}`)
+    const controller = new AbortController();
+    setQualityProfiles([{ id: -1, name: 'Server default (Radarr / Sonarr)', is4k: false }]);
+    setSelectedProfileId(-1);
+    fetch(`/api/request?type=${type}`, { signal: controller.signal })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (data?.profiles && Array.isArray(data.profiles) && data.profiles.length > 0) {
@@ -54,7 +50,8 @@ export const RequestDialog: React.FC<RequestDialogProps> = ({
           }
         }
       })
-      .catch(console.error);
+      .catch(() => { /* Omit profileId and let Seerr use its configured default. */ });
+    return () => controller.abort();
   }, [item?.type, item?.id]);
 
   if (!item) return null;
@@ -92,7 +89,7 @@ export const RequestDialog: React.FC<RequestDialogProps> = ({
           mediaType: item.type === 'Series' ? 'tv' : 'movie',
           mediaId: tmdbId,
           seasons,
-          profileId: selectedProfileId,
+          profileId: selectedProfileId >= 0 ? selectedProfileId : undefined,
           is4k: Boolean(selectedProfile?.is4k),
         }),
       });
