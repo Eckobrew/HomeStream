@@ -183,6 +183,9 @@ async function handleGET(request: NextRequest) {
     );
 
     if (!resolvedPath) {
+      if (targetFile.progress === 0) {
+        return NextResponse.json({ error: 'Waiting for qBittorrent to create the selected video file' }, { status: 425 });
+      }
       return NextResponse.json(
         {
           error: `Torrent file not found in downloads volume (${downloadsPath}). Check your volume mount settings.`,
@@ -263,6 +266,16 @@ async function handleGET(request: NextRequest) {
 
   const sourceRequest = searchParams.get('source') === '1';
   const nativeRequest = searchParams.get('native') === '1' && !forceTranscode;
+  if (nativeRequest && pieceSource) {
+    const states = await pieceSource.client.getPieceStates(pieceSource.hash);
+    const firstPiece = Math.floor(pieceSource.offset / pieceSource.size);
+    if (!states || firstPiece >= states.length) {
+      return NextResponse.json({ error: 'Cannot read verified torrent pieces from qBittorrent' }, { status: 503 });
+    }
+    if (states[firstPiece] !== 2) {
+      return NextResponse.json({ error: 'Waiting for the selected video file to buffer' }, { status: 425 });
+    }
+  }
   if (isDirectWebPlayable || sourceRequest || nativeRequest) {
     const types: Record<string, string> = { '.mkv': 'video/x-matroska', '.webm': 'video/webm', '.ts': 'video/mp2t', '.avi': 'video/x-msvideo', '.mov': 'video/quicktime' };
     return torrentResponse(request, resolvedPath, targetFileSize || stat.size, types[ext] || 'video/mp4', pieceSource);

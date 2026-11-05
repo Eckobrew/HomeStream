@@ -73,10 +73,14 @@ export const BuiltinPlayer: React.FC<BuiltinPlayerProps> = ({
   const [streamError, setStreamError] = useState(false);
   const [isMidStreamBuffering, setIsMidStreamBuffering] = useState(false);
   const [isLoadingEpisode, setIsLoadingEpisode] = useState(false);
-  const [streamUrl, setStreamUrl] = useState<string>('');
+  const [streamUrl, setStreamUrl] = useState(() =>
+    (item.downloaded ?? 0) >= 15 * 1024 * 1024 || (downloadProgress ?? item.downloadProgress ?? 0) >= 99
+      ? item.downloadStreamUrl || item.videoStreamUrl || ''
+      : ''
+  );
   const [streamDelivery, setStreamDelivery] = useState<{ url: string; type: string } | null>(null);
   const [isTranscoding, setIsTranscoding] = useState(false);
-  const [isLoadingStream, setIsLoadingStream] = useState(true);
+  const [isLoadingStream, setIsLoadingStream] = useState(!streamUrl);
 
   const isItemDownloading = Boolean(
     isDownloading ||
@@ -112,9 +116,9 @@ export const BuiltinPlayer: React.FC<BuiltinPlayerProps> = ({
         const cleanItemTitle = (item.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
         const found = data.items?.find((t: any) => {
-          if (resolvedTorrentHash && t.hash.toLowerCase() === resolvedTorrentHash.toLowerCase()) return true;
+          if (resolvedTorrentHash) return t.hash.toLowerCase() === resolvedTorrentHash.toLowerCase();
           const cleanName = (t.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-          return cleanName.includes(cleanItemTitle) || cleanItemTitle.includes(cleanName);
+          return Boolean(cleanName && cleanItemTitle && (cleanName.includes(cleanItemTitle) || cleanItemTitle.includes(cleanName)));
         });
 
         if (found && isMounted) {
@@ -130,11 +134,8 @@ export const BuiltinPlayer: React.FC<BuiltinPlayerProps> = ({
           const minBuffer = 15 * 1024 * 1024; // 15MB initial buffer threshold
           if (found.downloaded >= minBuffer || found.progressPercent >= 99) {
             const nextStreamUrl = found.streamUrl || `/api/stream/download?hash=${found.hash}`;
-            setStreamUrl(nextStreamUrl);
+            setStreamUrl(current => current || item.downloadStreamUrl || item.videoStreamUrl || nextStreamUrl);
             setIsLoadingStream(false);
-            setStreamError(false);
-          } else {
-            setIsLoadingStream(true);
           }
         }
       } catch {
@@ -148,7 +149,7 @@ export const BuiltinPlayer: React.FC<BuiltinPlayerProps> = ({
       isMounted = false;
       clearInterval(interval);
     };
-  }, [isItemDownloading, resolvedTorrentHash, item.title]);
+  }, [isItemDownloading, resolvedTorrentHash, item.title, item.downloadStreamUrl, item.videoStreamUrl]);
   const [hasTriedFallbackTranscode, setHasTriedFallbackTranscode] = useState(false);
   const [playbackDuration, setPlaybackDuration] = useState<number>(0);
 
@@ -777,18 +778,7 @@ export const BuiltinPlayer: React.FC<BuiltinPlayerProps> = ({
 
   // Negotiate dynamic playback stream (DirectPlay / Transcoding)
   useEffect(() => {
-    if (isItemDownloading) {
-      const minBuffer = 15 * 1024 * 1024;
-      const readyToPlay = downloadedBytes >= minBuffer || activeDownloadProgress >= 99;
-      if (readyToPlay && (item.downloadStreamUrl || item.videoStreamUrl)) {
-        setStreamUrl(item.downloadStreamUrl || item.videoStreamUrl || '');
-        setIsLoadingStream(false);
-      } else {
-        // Keep in loading/buffering state until poll() finds >= 15MB
-        setIsLoadingStream(true);
-      }
-      return;
-    }
+    if (isItemDownloading) return;
 
     if (!activePlayableId && item.type === 'Series') {
       return;
@@ -847,12 +837,6 @@ export const BuiltinPlayer: React.FC<BuiltinPlayerProps> = ({
   }, [activePlayableId, item, isJellyfinItem, jellyfinServerUrl, jellyfinApiKey, activeEpisode]);
 
   const handlePlaybackError = useCallback(() => {
-    // If still downloading and below 15MB initial buffer, ignore playback error and continue buffering
-    if (isItemDownloading && downloadedBytes < 15 * 1024 * 1024) {
-      console.warn('Playback error ignored during initial torrent download buffer');
-      return;
-    }
-
     const targetId = activePlayableId || item.playableEpisodeId || (item.type !== 'Series' ? item.jellyfinId || item.id : undefined);
 
     if (isJellyfinItem && targetId && !hasTriedFallbackTranscode) {
@@ -1423,7 +1407,7 @@ export const BuiltinPlayer: React.FC<BuiltinPlayerProps> = ({
       )}
 
       {/* Stream Error Dialog */}
-      {streamError && (!isItemDownloading || downloadedBytes >= 15 * 1024 * 1024) && (
+      {streamError && (
         <div className="absolute inset-0 bg-black/95 flex flex-col items-center justify-center p-6 text-center z-40 space-y-4">
           <div className="w-16 h-16 rounded-full bg-red-600/20 border border-red-500/40 flex items-center justify-center text-red-500">
             <AlertCircle size={32} />
@@ -1461,7 +1445,7 @@ export const BuiltinPlayer: React.FC<BuiltinPlayerProps> = ({
           onProgress={handleProgress}
           onWaiting={() => setIsMidStreamBuffering(true)}
           onStalled={() => setIsMidStreamBuffering(true)}
-          onPlaying={() => setIsMidStreamBuffering(false)}
+          onPlaying={() => { setIsLoadingStream(false); setIsMidStreamBuffering(false); }}
           onCanPlay={() => setIsMidStreamBuffering(false)}
           onLoadedMetadata={handleLoadedMetadata}
           onError={handlePlaybackError}

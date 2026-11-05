@@ -594,6 +594,7 @@ export default function Home() {
       {/* Built-in Web Player Overlay */}
       {playingState && (
         <BuiltinPlayer
+          key={playingState.item.id}
           item={playingState.item}
           episode={playingState.episode}
           onClose={handleClosePlayer}
