@@ -276,7 +276,7 @@ async function handleGET(request: NextRequest) {
     const states = await pieceSource.client.getPieceStates(pieceSource.hash);
     const firstPiece = Math.floor(pieceSource.offset / pieceSource.size);
     if (!states || firstPiece >= states.length) {
-      if (targetFile.progress < 0.05) {
+      if (targetFileProgress < 0.05) {
         return NextResponse.json({ error: 'Waiting for qBittorrent piece states to initialize' }, { status: 425 });
       }
       return NextResponse.json({ error: 'Cannot read verified torrent pieces from qBittorrent' }, { status: 503 });

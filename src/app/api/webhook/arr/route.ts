@@ -47,17 +47,12 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Fallback: iterate over all active torrents and enforce sequential on any with sonarr/radarr tags or category
+    // Enforce sequential on all active torrents
     const activeTorrents = await client.getDownloadingTorrents();
     let updatedCount = 0;
 
     for (const t of activeTorrents) {
-      const isArr =
-        (t.tags && /sonarr|radarr/i.test(t.tags)) ||
-        (t.category && /sonarr|radarr/i.test(t.category)) ||
-        /sonarr|radarr/i.test(t.name);
-
-      if (isArr && (!t.seq_dl || !t.f_l_piece_prio)) {
+      if (!t.seq_dl || !t.f_l_piece_prio) {
         await client.ensureSequentialAndHeader(t.hash, t.seq_dl, t.f_l_piece_prio);
         updatedCount++;
       }

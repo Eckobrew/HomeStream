@@ -348,13 +348,8 @@ export class QBittorrentClient {
     const results: DownloadingTorrentItem[] = [];
 
     for (const t of rawList) {
-      // Auto-enforce sequential mode if from Sonarr or Radarr
-      const isArr =
-        (t.tags && /sonarr|radarr/i.test(t.tags)) ||
-        (t.category && /sonarr|radarr/i.test(t.category)) ||
-        /sonarr|radarr/i.test(t.name);
-
-      if (isArr && (!t.seq_dl || !t.f_l_piece_prio)) {
+      // Auto-enforce sequential mode & first/last piece priority on all active torrents
+      if (!t.seq_dl || !t.f_l_piece_prio) {
         await this.ensureSequentialAndHeader(t.hash, t.seq_dl, t.f_l_piece_prio);
         t.seq_dl = true;
         t.f_l_piece_prio = true;
