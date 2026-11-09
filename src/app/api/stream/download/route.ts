@@ -122,6 +122,12 @@ async function handleGET(request: NextRequest) {
       await client.ensureSequentialAndHeader(torrent.hash, torrent.seq_dl, torrent.f_l_piece_prio);
     }
 
+    // Auto-resume torrent if paused or stopped so buffering can proceed
+    const torrentState = (torrent.state || '').toLowerCase();
+    if (torrentState.includes('stopped') || torrentState.includes('paused')) {
+      await client.resumeTorrent(torrent.hash);
+    }
+
     // Get file list (handling season packs and multi-file torrents)
     const files = await client.getTorrentFiles(torrent.hash);
     let targetFile = fileIndex !== undefined ? files.find(file => file.index === fileIndex) : undefined;
@@ -270,6 +276,9 @@ async function handleGET(request: NextRequest) {
     const states = await pieceSource.client.getPieceStates(pieceSource.hash);
     const firstPiece = Math.floor(pieceSource.offset / pieceSource.size);
     if (!states || firstPiece >= states.length) {
+      if (targetFile.progress < 0.05) {
+        return NextResponse.json({ error: 'Waiting for qBittorrent piece states to initialize' }, { status: 425 });
+      }
       return NextResponse.json({ error: 'Cannot read verified torrent pieces from qBittorrent' }, { status: 503 });
     }
     if (states[firstPiece] !== 2) {

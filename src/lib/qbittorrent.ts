@@ -290,6 +290,30 @@ export class QBittorrentClient {
   }
 
   /**
+   * Resumes a paused/stopped torrent so streaming download pieces can transfer.
+   */
+  async resumeTorrent(hash: string): Promise<boolean> {
+    try {
+      const sid = await this.getAuthCookie();
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Referer: this.baseUrl,
+        Origin: this.baseUrl,
+      };
+      if (sid) headers['Cookie'] = sid.includes('=') ? sid : `SID=${sid}`;
+      const res = await fetch(`${this.baseUrl}/api/v2/torrents/resume`, {
+        method: 'POST',
+        headers,
+        body: `hashes=${hash}`,
+      });
+      return res.ok;
+    } catch (err) {
+      console.error(`Failed to resume torrent ${hash}:`, err);
+      return false;
+    }
+  }
+
+  /**
    * Sets maximal download priority (7) on a specific file in a torrent (e.g. current episode).
    */
   async prioritizeFile(hash: string, fileIndex: number): Promise<boolean> {
