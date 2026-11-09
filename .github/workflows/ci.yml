@@ -1,0 +1,26 @@
+name: CI Validation
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  validate:
+    name: Validate Scripts & Compose
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Syntax Check Shell Scripts
+        run: |
+          bash -n ct/homestream.sh
+          bash -n install/homestream-install.sh
+
+      - name: Validate Docker Compose
+        run: |
+          docker compose -f docker-compose.yml config

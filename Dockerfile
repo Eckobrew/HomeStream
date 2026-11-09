@@ -1,64 +1,32 @@
-# Multi-stage Dockerfile for HomeFlix (Next.js Standalone)
-# Optimized for Proxmox LXC Containers and lightweight deployments
+# ==============================================================================
+# HomeStream Unified Gateway & Deployment Image
+# https://github.com/Eckobrew/HomeStream
+# ==============================================================================
 
-FROM node:22-alpine AS base
+FROM alpine:3.20 AS base
 
-# Install dependencies only when needed
-FROM base AS deps
-RUN apk add --no-cache libc6-compat
-WORKDIR /app
-
-COPY package.json package-lock.json* ./
-RUN npm_config_cache=/tmp/.npm-cache npm ci
-
-# Rebuild the source code only when needed
-FROM base AS builder
-WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
-COPY . .
-
-# Environment variables for build
-ENV NEXT_TELEMETRY_DISABLED=1
-ENV NODE_ENV=production
-ENV NODE_OPTIONS="--max-old-space-size=512"
-
-RUN npm_config_cache=/tmp/.npm-cache npm run build
-
-# Production image, copy all the files and run next
-FROM base AS runner
-WORKDIR /app
-
-# Install runtime utilities for media inspection, live transcoding & hardware acceleration
 RUN apk add --no-cache \
+    curl \
+    nginx \
     ffmpeg \
+    ca-certificates \
     libva-intel-driver \
     intel-media-driver \
-    libva-utils
+    libva-utils \
+    tzdata
 
-ENV NODE_ENV=production
-ENV NEXT_TELEMETRY_DISABLED=1
-ENV PORT=3000
-ENV HOSTNAME="0.0.0.0"
+WORKDIR /app
 
-RUN addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 nextjs
+# Copy default gateway configuration
+COPY nginx.conf /etc/nginx/http.d/default.conf
 
-COPY --from=builder /app/public ./public
+# Setup runtime directories
+RUN mkdir -p /data /downloads /music /youtube /run/nginx && \
+    chmod 755 /data /downloads /music /youtube
 
-# Automatically leverage output traces to reduce image size
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-
-RUN mkdir -p /app/data && chown -R nextjs:nodejs /app/data
-ENV DATA_DIR="/app/data"
-
-COPY scripts/socket-identity.cjs ./socket-identity.cjs
-
-USER nextjs
-
-EXPOSE 3000
+EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-  CMD wget -q -O /dev/null http://127.0.0.1:3000/api/mobile/v1/discovery || exit 1
+  CMD curl -f http://127.0.0.1:8080/ || exit 1
 
-CMD ["node", "--require", "./socket-identity.cjs", "server.js"]
+CMD ["nginx", "-g", "daemon off;"]

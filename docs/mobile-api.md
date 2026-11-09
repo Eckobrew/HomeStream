@@ -1,55 +1,45 @@
-# HomeStream mobile API v1
+# Android & Android TV Client Setup
 
-Set `HOMESTREAM_MOBILE_TOKEN` to a random secret of at least 32 characters
-(`openssl rand -hex 32`), restart HomeStream, and enter the same token and server
-URL in the Android app. All `/api/mobile/v1/*` endpoints require
-`Authorization: Bearer <token>`. They fail closed with 503 when unconfigured and
-401 for an invalid token. Serve the API over HTTPS outside a trusted LAN.
+HomeStream includes a native Android application built for smartphones (e.g., Google Pixel 8a) and Android TV / Google TV devices (e.g., Chromecast HD / Nvidia Shield).
 
-The token grants household access to existing HomeStream media and profiles,
-including requests. Profiles select watch history, not user authorization. This
-API does not change the web frontend's authentication or expose server setup.
-Rotate the token and re-pair devices to revoke access. Do not share it publicly.
+- **Repository**: [Eckobrew/Homestream-android](https://github.com/Eckobrew/Homestream-android)
+- **Minimum SDK**: Android 8.0 (API 26)
+- **Target SDK**: Android 15 (API 35)
 
-| Method | Path after `/api/mobile/v1/` | Response / input |
-| --- | --- | --- |
-| GET | capabilities | apiVersion, appName, cast |
-| GET | profiles | profiles: UserProfile[] |
-| GET | home?userId=… | Existing hero, sections, requestSections, isDemoMode |
-| GET | library/movies or library/tv?userId=…&search=… | items: MediaItem[] |
-| GET | media/:id?userId=… | item: MediaItem (including seasons/episodes) |
-| GET | playback?itemId=…&userId=…&forceTranscode=true | streamUrl, isTranscoding, durationSeconds |
-| GET | subtitles?itemId=… | subtitles: SubtitleTrack[] |
-| POST | progress | {itemId, userId, positionTicks, isPaused, isStopped} |
-| POST | request | Existing RequestMediaPayload (mediaType, mediaId, seasons) |
+---
 
-Types are defined in `src/types/index.ts`. Ticks are 100 nanoseconds. Responses
-are `no-store`. Error responses contain `error`. HomeStream may explicitly return
-demo data if Jellyfin is absent or unavailable; the native client labels this.
-Library search uses the existing library endpoint so it searches actual Jellyfin
-items rather than returning Seerr discovery results alone.
+## 📲 Pairing Your Android Device
 
-## Stream networking and Chromecast
+HomeStream supports two pairing workflows:
 
-Playback reuses HomeStream's Jellyfin negotiation (H.264/AAC fallback), including
-its signed/credential-bearing Jellyfin URLs. These are sensitive and must not be
-logged or shared. The phone/TV and Chromecast must reach the configured Jellyfin
-URL, not just HomeStream. Container-only hostnames and localhost will not work.
-Use a receiver-accessible LAN name or HTTPS address and configure Jellyfin CORS
-for Google Cast receivers. HTTPS must have a trusted certificate; Chromecast
-cannot use the app's pairing header or phone-only VPN connection. The default
-Google Cast media receiver is used, so no custom receiver registration is needed.
-Cast requests force compatible HLS transcoding. Test with your actual codecs and
-Jellyfin transcoding configuration before rollout.
+### 1. Automatic LAN Direct Pairing (Zero Password Setup)
+When your phone or TV is on the same local network (LAN) as your HomeStream server:
+1. Open the HomeStream Android app.
+2. The app detects the server via mDNS/Discovery on your local subnet.
+3. Tap **Connect**.
+4. The server validates that the request originates from a private subnet and establishes an authenticated device session token without requiring credentials.
 
-## Local validation
+### 2. Remote Jellyfin Sign-In
+When connecting outside your home network:
+1. Enter your server's external address (e.g., `https://homestream.yourdomain.com`).
+2. Sign in with your Jellyfin username and password.
+3. The app establishes a persistent, secure session.
 
-`npm run test:mobile` starts an isolated development server with temporary data
-and test credentials, verifies disabled/invalid auth, demo feed and details,
-profiles/libraries, playback/progress input validation and unavailable routes,
-and shuts the server down. A fake Jellyfin upstream also verifies H.264/AAC
-negotiation and profile-linked progress/stop requests. No real Jellyfin or Seerr
-server is required.
-`npm run build` type-checks and builds the complete existing frontend.
-The repository's general `npm run lint` currently reports pre-existing errors
-outside this API; the new route is separately linted in the Mobile API workflow.
+---
+
+## 🧭 Dynamic Hub Navigation
+
+On mobile phones, HomeStream features a floating bottom pill that dynamically adapts its controls based on the active hub:
+
+- **Main Movies & TV Hub**: Home, TV Shows, Movies, Discover, Search (Red accent).
+- **Music Hub**: Albums, Artists, Songs, Search, Player (Spotify Green `#1DB954` accent).
+- **YouTube Hub**: Home, Subs, Queue, Archive, Search (YouTube Red accent).
+
+---
+
+## 📺 Android TV Features
+
+On Google TV and Android TV:
+- Full D-Pad / Remote control navigation with smooth focus states and card elevation.
+- Dedicated TV browse menu for A–Z Movie catalogs, Series, Music Hub, and YouTube Hub.
+- Hardware-accelerated ExoPlayer playback.

@@ -10,7 +10,7 @@ APP="HomeStream"
 var_tags="${var_tags:-media;streaming}"
 var_cpu="${var_cpu:-2}"
 var_ram="${var_ram:-2048}"
-var_disk="${var_disk:-8}"
+var_disk="${var_disk:-16}"
 var_os="${var_os:-debian}"
 var_version="${var_version:-12}"
 var_arm64="${var_arm64:-yes}"
@@ -38,28 +38,16 @@ function update_script() {
     exit 1
   fi
 
-  SERVICE_NAME="homestream"
-  if systemctl is-active --quiet homeflix; then
-    SERVICE_NAME="homeflix"
-  fi
-
-  msg_info "Stopping Service"
-  systemctl stop "$SERVICE_NAME"
-  msg_ok "Stopped Service"
-
-  msg_info "Updating ${APP}"
+  msg_info "Updating ${APP} Container Images"
   cd "$TARGET_DIR"
-  $STD git fetch origin
-  $STD git reset --hard origin/main
-  $STD npm install
-  export NEXT_TELEMETRY_DISABLED=1
-  export NODE_ENV=production
-  $STD npm run build
-  msg_ok "Updated ${APP}"
-
-  msg_info "Starting Service"
-  systemctl start "$SERVICE_NAME"
-  msg_ok "Started Service"
+  if command -v docker &>/dev/null && [[ -f docker-compose.yml ]]; then
+    $STD docker compose pull
+    $STD docker compose up -d --remove-orphans
+    msg_ok "Updated and restarted ${APP} Docker stack"
+  elif systemctl is-active --quiet homestream; then
+    systemctl restart homestream
+    msg_ok "Restarted ${APP} service"
+  fi
   msg_ok "Updated successfully!"
   exit
 }
