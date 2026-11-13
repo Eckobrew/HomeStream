@@ -69,7 +69,7 @@ services:
       - homestream-net
 
   web:
-    image: ${HOMESTREAM_WEB_IMAGE:-ghcr.io/eckobrew/homestream-web:1.0.0}
+    image: ${HOMESTREAM_WEB_IMAGE:-ghcr.io/eckobrew/homestream-web:1.0.1}
     container_name: homestream-web
     restart: unless-stopped
     environment:
