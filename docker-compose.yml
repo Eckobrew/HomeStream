@@ -16,7 +16,7 @@ services:
       - homestream-net
 
   backend:
-    image: ${HOMESTREAM_BACKEND_IMAGE:-ghcr.io/eckobrew/homestream-backend:latest}
+    image: ${HOMESTREAM_BACKEND_IMAGE:-ghcr.io/eckobrew/homestream-backend:1.0.0}
     container_name: homestream-backend
     restart: unless-stopped
     environment:
@@ -24,6 +24,9 @@ services:
       - PORT=3001
       - DATA_DIR=/data
       - DOWNLOADS_PATH=/downloads
+      - BOOKS_PATH=/books
+      - BOOKSHELF_URL=${BOOKSHELF_URL:-}
+      - BOOKSHELF_API_KEY=${BOOKSHELF_API_KEY:-}
       - MUSIC_PATH=/music
       - YOUTUBE_PATH=/youtube
       - JELLYFIN_URL=${JELLYFIN_URL:-}
@@ -51,6 +54,7 @@ services:
     volumes:
       - ${DATA_PATH:-./data}:/data
       - ${DOWNLOADS_PATH:-./downloads}:/downloads
+      - ${BOOKS_PATH:-./books}:/books:ro
       - ${MUSIC_PATH:-./music}:/music
       - ${YOUTUBE_PATH:-./youtube}:/youtube
     devices:
@@ -65,7 +69,7 @@ services:
       - homestream-net
 
   web:
-    image: ${HOMESTREAM_WEB_IMAGE:-ghcr.io/eckobrew/homestream-web:latest}
+    image: ${HOMESTREAM_WEB_IMAGE:-ghcr.io/eckobrew/homestream-web:1.0.0}
     container_name: homestream-web
     restart: unless-stopped
     environment:

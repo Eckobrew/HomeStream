@@ -52,6 +52,7 @@ msg_info "Setting up HomeStream Stack"
 mkdir -p /opt/homestream/data
 mkdir -p /opt/homestream/downloads
 mkdir -p /opt/homestream/music
+mkdir -p /opt/homestream/books
 mkdir -p /opt/homestream/youtube
 
 cd /opt/homestream

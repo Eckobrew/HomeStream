@@ -63,6 +63,7 @@ Edit `/etc/pve/lxc/<CTID>.conf` on your Proxmox host:
 mp0: /mnt/pve/nas/downloads,mp=/opt/homestream/downloads
 mp1: /mnt/pve/nas/music,mp=/opt/homestream/music
 mp2: /mnt/pve/nas/youtube,mp=/opt/homestream/youtube
+mp3: /mnt/pve/nas/books,mp=/opt/homestream/books,ro=1
 ```
 
 Restart the LXC container:
@@ -74,7 +75,7 @@ pct reboot <CTID>
 
 ## 🔄 Updating HomeStream
 
-To update container images to the latest releases:
+To update, check the [Docker guide](docker.md#books-and-release-images) for the release image settings, then pull the configured images:
 
 Inside the container:
 ```bash

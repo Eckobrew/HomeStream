@@ -15,12 +15,19 @@
 
 </div>
 
+## Install or open HomeStream
+
+- [Download the Android and Android TV APK](https://github.com/Eckobrew/Homestream-android/releases/latest) for Pixel and Chromecast with Google TV.
+- [Deploy the server with Docker Compose](docs/docker.md) or [install on Proxmox VE](docs/pve-install.md). Then open the server address on port 3000 in your browser.
+- Component release notes are available for [Web](https://github.com/Eckobrew/homestream-web/releases/latest) and [Backend](https://github.com/Eckobrew/homestream-backend/releases/latest).
+
 ## ✨ Highlights
 
 - 🍿 **Unified Streaming Experience**: Sleek Netflix-style interface with continuous rows, hero banners, watch progress bars, and instant search.
 - 📺 **Native Android Phone & TV App**: Built for Google Pixel and Android TV / Chromecast HD with dynamic floating bottom navigation, full D-pad remote support, and hardware ExoPlayer decoding.
+- **Books Hub** offers per-profile shelves and an EPUB/PDF reader with cream paper and animated page turns.
 - 🎵 **Dedicated Music Hub**: Spotify-styled interface with per-profile library isolation, instant server-side album adding, and automated peer-to-peer Soulseek (`slskd`) downloads.
-- 🔴 **YouTube Hub**: Sub-50ms continuous feeds, subscription feeds, ad-free streaming, and background NAS archiver via `yt-dlp`.
+- 🔴 **YouTube Hub**: Subscription feeds, search, and a background NAS archiver via `yt-dlp`.
 - ⚡ **Hardware Acceleration**: Automatic Intel QuickSync (VA-API `/dev/dri`) and NVIDIA NVENC GPU transcoding passthrough.
 - 🛡️ **Parental Controls**: Multi-profile system with age rating tiers (U, PG, 12, 15, 18) and secure Parent PIN protection.
 - 📡 **Google Cast**: Integrated Chromecast receiver and sender support for effortless living room casting.

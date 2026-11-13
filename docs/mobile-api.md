@@ -43,3 +43,8 @@ On Google TV and Android TV:
 - Full D-Pad / Remote control navigation with smooth focus states and card elevation.
 - Dedicated TV browse menu for A–Z Movie catalogs, Series, Music Hub, and YouTube Hub.
 - Hardware-accelerated ExoPlayer playback.
+
+
+## Books on Android and Android TV
+
+Install the [current release APK](https://github.com/Eckobrew/Homestream-android/releases/latest). In Books Hub, use Shelf, Search, or Queue. Open an EPUB or PDF, then turn pages with swipes, edge taps, or the directional buttons. Use Android Back to return to the shelf.

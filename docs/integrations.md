@@ -78,7 +78,7 @@ MUSIC_PATH=/mnt/music
 The YouTube Hub integrates live YouTube searching, continuous feeds, subscription notifications, and automated background downloading to your local NAS via `yt-dlp`.
 
 ### Features:
-- Feed recommendations cached in memory for sub-50ms instant loading.
+- Feed recommendations are cached in memory.
 - Native video playback without ads.
 - Automated background queue and local archive downloads stored under `YOUTUBE_PATH`.
 
@@ -100,3 +100,10 @@ QBITTORRENT_USERNAME=admin
 QBITTORRENT_PASSWORD=your_password
 DOWNLOADS_PATH=/mnt/downloads
 ```
+
+
+## Bookshelf
+
+Configure the Bookshelf URL and API key in Admin integrations or through `BOOKSHELF_URL` and `BOOKSHELF_API_KEY`. Bookshelf tracks requests and imports completed files into its library. Mount that library at `/books` in the backend. The download staging folder serves the download client.
+
+Books Hub offers Shelf, Search, and Queue. Open an imported EPUB or PDF to read it. Turn pages by tapping the paper edge, swiping, or using the arrow keys. Web fits one page on narrow screens and a spread where space permits. The reader saves progress to the active profile.

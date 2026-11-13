@@ -59,6 +59,7 @@ flowchart TD
   - YouTube hub with continuous feed recommendations, NAS background archiver, and `yt-dlp` stream proxy.
   - Spotify-style music hub with per-profile library isolation, Soulseek/slskd integration, embedded ID3 APIC extraction, and iTunes cover caching.
   - Multi-profile access control with kids rating tiers (U, PG, 12, 15, 18) and parental PIN validation.
+  - Bookshelf catalog access, per-profile shelves and reading progress, and an imported library mounted at `/books`.
   - Mobile REST & WebSocket API (`/api/mobile/v1/*`).
 
 ### 3. Next.js Web UI (`homestream-web`)
@@ -70,6 +71,7 @@ flowchart TD
   - Dedicated full-bleed YouTube hub with edge-to-edge thumbnails.
   - Spotify-styled music player with mini-bar, scrubber, and queue management.
   - Embedded HLS.js custom media player with auto-resume, subtitle selection, and audio track switching.
+  - Responsive EPUB and PDF reader with animated page turns.
   - Google Cast sender integration.
 
 ### 4. Native Android & Android TV Client (`homestream-android`)

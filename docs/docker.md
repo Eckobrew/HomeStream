@@ -43,6 +43,7 @@ HOMESTREAM_SESSION_SECRET=generate_random_32_characters_here
 DATA_PATH=./data
 DOWNLOADS_PATH=/mnt/downloads
 MUSIC_PATH=/mnt/music
+BOOKS_PATH=./books
 YOUTUBE_PATH=/mnt/youtube
 ```
 
@@ -90,6 +91,12 @@ deploy:
 ```
 
 ---
+
+## Books and release images
+
+Set `BOOKS_PATH` to the host directory where Bookshelf imports completed books. Compose mounts it read-only at `/books` in HomeStream. Set `BOOKSHELF_URL` and `BOOKSHELF_API_KEY` for catalog access. See [Bookshelf setup](integrations.md#bookshelf).
+
+Compose pins the Backend and Web release images. For upgrades, check both component releases and update Compose or set `HOMESTREAM_BACKEND_IMAGE` and `HOMESTREAM_WEB_IMAGE` in `.env` before pulling.
 
 ## 🔄 Management Commands
 
