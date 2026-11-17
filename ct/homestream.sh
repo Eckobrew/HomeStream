@@ -39,14 +39,19 @@ function update_script() {
   fi
 
   msg_info "Updating ${APP} Container Images"
-  cd "$TARGET_DIR"
-  if command -v docker &>/dev/null && [[ -f docker-compose.yml ]]; then
-    $STD docker compose pull
-    $STD docker compose up -d --remove-orphans
+  if command -v homestream-update &>/dev/null; then
+    $STD homestream-update
     msg_ok "Updated and restarted ${APP} Docker stack"
-  elif systemctl is-active --quiet homestream; then
-    systemctl restart homestream
-    msg_ok "Restarted ${APP} service"
+  else
+    cd "$TARGET_DIR"
+    if command -v docker &>/dev/null && [[ -f docker-compose.yml ]]; then
+      $STD docker compose pull
+      $STD docker compose up -d --remove-orphans
+      msg_ok "Updated and restarted ${APP} Docker stack"
+    elif systemctl is-active --quiet homestream; then
+      systemctl restart homestream
+      msg_ok "Restarted ${APP} service"
+    fi
   fi
   msg_ok "Updated successfully!"
   exit

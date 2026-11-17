@@ -50,6 +50,8 @@ msg_ok "Installed yt-dlp"
 
 msg_info "Setting up HomeStream Stack"
 mkdir -p /opt/homestream/data
+mkdir -p /opt/homestream/movies
+mkdir -p /opt/homestream/tv
 mkdir -p /opt/homestream/downloads
 mkdir -p /opt/homestream/music
 mkdir -p /opt/homestream/books
@@ -98,6 +100,41 @@ EOF
 systemctl daemon-reload
 systemctl enable -q homestream
 msg_ok "Created Systemd Service"
+
+msg_info "Installing homestream-update Command"
+cat <<'EOF' >/usr/local/bin/homestream-update
+#!/usr/bin/env bash
+set -euo pipefail
+
+TARGET_DIR="/opt/homestream"
+if [[ ! -d "$TARGET_DIR" && -d /opt/homeflix ]]; then
+  TARGET_DIR="/opt/homeflix"
+fi
+
+if [[ ! -d "$TARGET_DIR" ]]; then
+  echo "Error: HomeStream installation not found in /opt/homestream" >&2
+  exit 1
+fi
+
+cd "$TARGET_DIR"
+REPO_RAW="${HOMESTREAM_REPO_RAW:-https://raw.githubusercontent.com/Eckobrew/homestream/main}"
+
+if [[ -f .env ]]; then
+  cp .env ".env.bak.$(date +%Y%m%d%H%M%S)"
+fi
+
+curl -fsSL "${REPO_RAW}/docker-compose.yml" -o "${TARGET_DIR}/docker-compose.yml"
+curl -fsSL "${REPO_RAW}/nginx.conf" -o "${TARGET_DIR}/nginx.conf"
+
+docker compose pull
+docker compose up -d --remove-orphans
+docker image prune -f >/dev/null 2>&1 || true
+
+echo "HomeStream updated successfully:"
+docker compose ps
+EOF
+chmod 0755 /usr/local/bin/homestream-update
+msg_ok "Installed homestream-update Command"
 
 msg_info "Pulling Container Images & Starting Stack (Patience)"
 cd /opt/homestream

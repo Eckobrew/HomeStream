@@ -16,7 +16,7 @@ services:
       - homestream-net
 
   backend:
-    image: ${HOMESTREAM_BACKEND_IMAGE:-ghcr.io/eckobrew/homestream-backend:1.0.0}
+    image: ${HOMESTREAM_BACKEND_IMAGE:-ghcr.io/eckobrew/homestream-backend:edge}
     container_name: homestream-backend
     restart: unless-stopped
     environment:
@@ -53,6 +53,8 @@ services:
       - HOMESTREAM_TRUSTED_PROXIES=${HOMESTREAM_TRUSTED_PROXIES:-}
     volumes:
       - ${DATA_PATH:-./data}:/data
+      - ${MOVIES_PATH:-./movies}:/movies
+      - ${TV_PATH:-./tv}:/tv
       - ${DOWNLOADS_PATH:-./downloads}:/downloads
       - ${BOOKS_PATH:-./books}:/books:ro
       - ${MUSIC_PATH:-./music}:/music
@@ -69,7 +71,7 @@ services:
       - homestream-net
 
   web:
-    image: ${HOMESTREAM_WEB_IMAGE:-ghcr.io/eckobrew/homestream-web:1.0.1}
+    image: ${HOMESTREAM_WEB_IMAGE:-ghcr.io/eckobrew/homestream-web:edge}
     container_name: homestream-web
     restart: unless-stopped
     environment:
